@@ -1,0 +1,27 @@
+<resources>
+    <string name="app_name">Online Payslip</string>
+    <string name="portal_title">پے سلپ آن لائن پورٹل</string>
+    <string name="portal_subtitle">ڈیجیٹل سروسز برائے سرکاری ملازمین</string>
+    <string name="search_title">اپنا ضلع منتخب کریں اور پے سلپ تلاش کریں</string>
+    <string name="search_desc">اپنی مطلوبہ پے سلپ تلاش کرنے کے لیے نیچے دیے گئے فارم سے متعلقہ ضلع، کیٹیگری، مہینہ، سال کا انتخاب کریں اور نمبر درج کریں۔</string>
+    <string name="label_district">اپنا ضلع منتخب کریں:</string>
+    <string name="label_category">کیٹیگری:</string>
+    <string name="label_month">مہینہ منتخب کریں:</string>
+    <string name="label_year">سال منتخب کریں:</string>
+    <string name="label_cnic">شناختی کارڈ یا پرسنل نمبر درج کریں:</string>
+    <string name="placeholder_query">نمبر درج کریں...</string>
+    <string name="btn_reset">صاف کریں</string>
+    <string name="btn_search">تلاش کریں</string>
+    <string name="btn_close">بند کریں</string>
+    <string name="btn_download_pdf">ڈاؤن لوڈ PDF</string>
+    <string name="btn_print">پرنٹ کریں</string>
+    <string name="btn_share">شیئر کریں</string>
+    <string name="ticker_text">🎉 مبارک ہو! اگست کے پے سلپس اپلوڈ کر دیے گئے ہیں، جن ملازمین نے ابھی تک ہمارا واٹس ایپ چینل جوائن نہیں کیا، وہ جلد از جلد جوائن کر لیں۔</string>
+    <string name="default_banner_heading">اہم اپڈیٹ: ہمارا واٹس ایپ چینل جوائن کریں!</string>
+    <string name="default_banner_text">خیبر ایلیمنٹری اینڈ سیکنڈری ایجوکیشن کی تازہ ترین خبروں، نوٹیفیکیشنز اور تبادلوں کی اپڈیٹس کے لیے ابھی ہمارا آفیشل واٹس ایپ چینل جوائن کریں۔</string>
+    <string name="btn_join_channel">چینل جوائن کریں</string>
+    <string name="security_notice_title">حفاظتی ہدایات</string>
+    <string name="security_notice_text">یہ پورٹل ڈیٹا بیس کی تلاش کے لیے محفوظ ترین اصولوں کا استعمال کرتا ہے۔ کسی بھی تکنیکی یا ملازم کے ڈیٹا میں غلطی کی صورت میں اپنے ڈسٹرکٹ آفس/اکاؤنٹس برانچ سے فوری رابطہ کریں۔</string>
+    <string name="footer_rights">محفوظ ڈیجیٹل سروسز - پے سلپ سسٹم © 2026</string>
+    <string name="footer_sub">© 2026 Babar Ali. All Rights Reserved | System v3.2</string>
+</resources>

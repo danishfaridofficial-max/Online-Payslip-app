@@ -1,0 +1,7 @@
+{
+  "name": "Online Payslip",
+  "description": "Online Payslip portal for KP Government employees to search, view, download, and print official monthly salary statements.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
