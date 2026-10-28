@@ -41,10 +41,7 @@ jobs:
 
       - name: Restore Keystore & Secrets
         run: |
-          # Create .env if missing
           touch .env
-          
-          # Restore debug.keystore from base64 if present
           if [ -f "debug.keystore.base64" ]; then
             base64 -d debug.keystore.base64 > debug.keystore
             echo "debug.keystore restored from base64"
@@ -63,7 +60,7 @@ jobs:
           if [ -f "$APK_PATH" ]; then
             cp "$APK_PATH" build-release/OnlinePayslip-v1.0.apk
             cp "$APK_PATH" build-release/app-debug.apk
-            echo "APK generated successfully at build-release/OnlinePayslip-v1.0.apk"
+            echo "APK ready at build-release/OnlinePayslip-v1.0.apk"
           else
             echo "APK file not found!" && exit 1
           fi
@@ -80,19 +77,16 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.create_release == 'true' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('v1.0-{0}', github.run_number) }}
-          name: ${{ format('Online Payslip v1.0 (Build #{0})', github.run_number) }}
+          tag_name: v1.0.${{ github.run_number }}
+          name: Online Payslip v1.0 (Build ${{ github.run_number }})
           body: |
             ### Online Payslip Android APK
             
-            ✅ **Automatic Build from GitHub Actions**
-            - Commit: `${{ github.sha }}`
-            - Build Number: `${{ github.run_number }}`
+            Automatic Build from GitHub Actions.
             - Features: Official HRMIS Login, Real Firebase Messaging, Unity Ads Rewarded Flow, Live Traffic & PDF Export.
             
-            📥 **Download APK:** Click below under **Assets** to download `OnlinePayslip-v1.0.apk` directly to your phone.
-          files: |
-            build-release/OnlinePayslip-v1.0.apk
+            Download APK: Click below under Assets to download OnlinePayslip-v1.0.apk directly to your phone.
+          files: build-release/OnlinePayslip-v1.0.apk
           draft: false
           prerelease: false
         env:
