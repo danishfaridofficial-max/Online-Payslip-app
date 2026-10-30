@@ -88,6 +88,7 @@ fun PortalHeader(
     onOpenWhatsappClick: (() -> Unit)? = null,
     onOpenSecurityNoticeClick: (() -> Unit)? = null,
     onOpenNotificationsClick: (() -> Unit)? = null,
+    onShareAppClick: (() -> Unit)? = null,
     onRefreshClick: (() -> Unit)? = null
 ) {
     Box(
@@ -109,29 +110,55 @@ fun PortalHeader(
             .padding(horizontal = 16.dp, vertical = 20.dp)
             .testTag("portal_header")
     ) {
-        // In-App Notification Bell Button (Top End) with Dynamic Badge Dot
-        IconButton(
-            onClick = { onOpenNotificationsClick?.invoke() },
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .size(42.dp)
-                .background(Color.White.copy(alpha = 0.18f), CircleShape)
-                .testTag("portal_notification_bell_btn")
-        ) {
-            Box(contentAlignment = Alignment.TopEnd) {
-                Icon(
-                    imageVector = Icons.Default.NotificationsActive,
-                    contentDescription = "Notifications",
-                    tint = Color.White,
-                    modifier = Modifier.size(22.dp)
-                )
-                if (hasUnreadNotifications) {
-                    // Red badge indicator dot only when there's an actual unread notification
-                    Box(
-                        modifier = Modifier
-                            .size(9.dp)
-                            .background(Color(0xFFEF4444), CircleShape)
-                            .border(1.dp, Color.White, CircleShape)
+        // Top Action Bar: Left = Notification Bell, Right = Share App Button
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.TopCenter),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Left: In-App Notification Bell Button with Dynamic Badge Dot
+                IconButton(
+                    onClick = { onOpenNotificationsClick?.invoke() },
+                    modifier = Modifier
+                        .size(42.dp)
+                        .background(Color.White.copy(alpha = 0.18f), CircleShape)
+                        .testTag("portal_notification_bell_btn")
+                ) {
+                    Box(contentAlignment = Alignment.TopEnd) {
+                        Icon(
+                            imageVector = Icons.Default.NotificationsActive,
+                            contentDescription = "Notifications",
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        if (hasUnreadNotifications) {
+                            // Red badge indicator dot only when there's an actual unread notification
+                            Box(
+                                modifier = Modifier
+                                    .size(9.dp)
+                                    .background(Color(0xFFEF4444), CircleShape)
+                                    .border(1.dp, Color.White, CircleShape)
+                            )
+                        }
+                    }
+                }
+
+                // Right: Share App Button
+                IconButton(
+                    onClick = { onShareAppClick?.invoke() },
+                    modifier = Modifier
+                        .size(42.dp)
+                        .background(Color.White.copy(alpha = 0.18f), CircleShape)
+                        .testTag("portal_share_app_btn")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "Share App",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }

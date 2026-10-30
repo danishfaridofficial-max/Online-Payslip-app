@@ -94,12 +94,28 @@ fun PayslipPortalApp(viewModel: PayslipViewModel) {
                         .fillMaxSize()
                         .verticalScroll(rememberScrollState())
                 ) {
-                    // 1. Header with Gradient and Notification Bell Icon Button
+                    // 1. Header with Gradient, Notification Bell (Left) and Share App Button (Right)
                     PortalHeader(
                         currentDate = state.currentDateFormatted,
+                        hasUnreadNotifications = hasUnreadNotifications,
                         onOpenNotificationsClick = {
                             (context as? com.example.MainActivity)?.requestNotificationPermission()
                             showInAppNotificationDialog = true
+                        },
+                        onShareAppClick = {
+                            try {
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_SUBJECT, "Online Payslip KP Portal")
+                                    putExtra(
+                                        Intent.EXTRA_TEXT,
+                                        "خیبر پختونخوا آن لائن پے سلپ ایپ ڈاؤن لوڈ کریں:\nhttps://github.com/danishfaridofficial-max/Online-Payslip-app/releases/latest/download/OnlinePayslip.apk"
+                                    )
+                                }
+                                context.startActivity(Intent.createChooser(shareIntent, "ایپ شیئر کریں"))
+                            } catch (_: Exception) {
+                                scope.launch { snackbarHostState.showSnackbar("شیئر کرنے میں مسئلہ پیش آیا") }
+                            }
                         },
                         onOpenWhatsappClick = {
                             try {
