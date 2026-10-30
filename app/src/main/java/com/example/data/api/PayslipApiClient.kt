@@ -169,13 +169,44 @@ object PayslipApiClient {
     suspend fun savePassword(
         cnic: String,
         password: String,
+        email: String = "",
+        dateTime: String = "",
         webAppUrl: String = DEFAULT_WEB_APP_URL
     ): PasswordResponse = withContext(Dispatchers.IO) {
         try {
             val cleanCnic = cnic.replace(Regex("[^0-9]"), "").trim()
             val encodedCnic = URLEncoder.encode(cleanCnic, "UTF-8")
             val encodedPass = URLEncoder.encode(password.trim(), "UTF-8")
-            val url = "$webAppUrl?action=savePassword&cnic=$encodedCnic&password=$encodedPass"
+            val encodedEmail = URLEncoder.encode(email.trim(), "UTF-8")
+            val encodedDateTime = URLEncoder.encode(dateTime.trim(), "UTF-8")
+            val url = "$webAppUrl?action=savePassword&cnic=$encodedCnic&password=$encodedPass&email=$encodedEmail&dateTime=$encodedDateTime"
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:109.0) Gecko/111.0 Firefox/111.0")
+                .build()
+
+            okHttpClient.newCall(request).execute().use { response ->
+                val body = response.body?.string() ?: ""
+                val adapter = moshi.adapter(PasswordResponse::class.java)
+                adapter.fromJson(body) ?: PasswordResponse(success = false, message = "سرور پر محفوظ نہیں ہو سکا۔")
+            }
+        } catch (e: Exception) {
+            PasswordResponse(success = false, error = e.localizedMessage)
+        }
+    }
+
+    suspend fun saveRecoveryEmail(
+        cnic: String,
+        email: String,
+        dateTime: String = "",
+        webAppUrl: String = DEFAULT_WEB_APP_URL
+    ): PasswordResponse = withContext(Dispatchers.IO) {
+        try {
+            val cleanCnic = cnic.replace(Regex("[^0-9]"), "").trim()
+            val encodedCnic = URLEncoder.encode(cleanCnic, "UTF-8")
+            val encodedEmail = URLEncoder.encode(email.trim(), "UTF-8")
+            val encodedDateTime = URLEncoder.encode(dateTime.trim(), "UTF-8")
+            val url = "$webAppUrl?action=saveRecoveryEmail&cnic=$encodedCnic&email=$encodedEmail&dateTime=$encodedDateTime"
             val request = Request.Builder()
                 .url(url)
                 .header("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:109.0) Gecko/111.0 Firefox/111.0")

@@ -19,9 +19,59 @@ class PayslipRepository(context: Context) {
 
     private val prefs: SharedPreferences = context.getSharedPreferences("payslip_portal_prefs", Context.MODE_PRIVATE)
 
+    private fun parseCsv(csvText: String): List<List<String>> {
+        val rows = mutableListOf<List<String>>()
+        val currentField = StringBuilder()
+        var inQuotes = false
+        val currentRow = mutableListOf<String>()
+
+        var i = 0
+        while (i < csvText.length) {
+            val c = csvText[i]
+            when (c) {
+                '\"' -> {
+                    if (inQuotes && i + 1 < csvText.length && csvText[i + 1] == '\"') {
+                        currentField.append('\"')
+                        i++
+                    } else {
+                        inQuotes = !inQuotes
+                    }
+                }
+                ',' -> {
+                    if (inQuotes) {
+                        currentField.append(',')
+                    } else {
+                        currentRow.add(currentField.toString().trim())
+                        currentField.setLength(0)
+                    }
+                }
+                '\r' -> {}
+                '\n' -> {
+                    if (inQuotes) {
+                        currentField.append('\n')
+                    } else {
+                        currentRow.add(currentField.toString().trim())
+                        currentField.setLength(0)
+                        rows.add(currentRow.toList())
+                        currentRow.clear()
+                    }
+                }
+                else -> {
+                    currentField.append(c)
+                }
+            }
+            i++
+        }
+        if (currentField.isNotEmpty() || currentRow.isNotEmpty()) {
+            currentRow.add(currentField.toString().trim())
+            rows.add(currentRow.toList())
+        }
+        return rows
+    }
+
     suspend fun getActiveMonthsFromMaster(): List<String> = withContext(Dispatchers.IO) {
         val masterSheetId = "164xqHxPq5Q6bS9-55pmp40Z-A03Vme3-GJbgKJ913tQ"
-        val url = "https://docs.google.com/spreadsheets/d/$masterSheetId/gviz/tq?tqx=out:csv&gid=0&range=A2:D20"
+        val url = "https://docs.google.com/spreadsheets/d/$masterSheetId/gviz/tq?tqx=out:csv&gid=0"
         try {
             val request = Request.Builder()
                 .url(url)
@@ -37,17 +87,16 @@ class PayslipRepository(context: Context) {
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@use emptyList<String>()
                 val body = response.body?.string() ?: return@use emptyList<String>()
+                val rows = parseCsv(body)
                 val months = mutableListOf<String>()
-                val regex = Regex("\"([^\"]*)\"")
-                val matches = regex.findAll(body).map { it.groupValues[1] }.toList()
-                var i = 0
-                while (i + 3 < matches.size) {
-                    val m = matches[i].trim()
-                    val status = matches[i + 3].trim()
-                    if (status.equals("Active", ignoreCase = true) && m.isNotBlank()) {
-                        months.add(m)
+                for (row in rows) {
+                    if (row.size >= 4) {
+                        val m = row[0].trim()
+                        val status = row[3].trim()
+                        if (status.equals("Active", ignoreCase = true) && m.isNotBlank() && !m.equals("Month", ignoreCase = true)) {
+                            months.add(m)
+                        }
                     }
-                    i += 4
                 }
                 if (months.isNotEmpty()) {
                     return@withContext months.reversed()
@@ -139,21 +188,93 @@ class PayslipRepository(context: Context) {
         return@withContext (cleanPass == fallbackPass)
     }
 
-    suspend fun savePasswordOnline(cnic: String, newPass: String): Boolean = withContext(Dispatchers.IO) {
+    suspend fun savePasswordOnline(cnic: String, newPass: String, email: String? = null): Boolean = withContext(Dispatchers.IO) {
         val cleanCnic = cnic.replace(Regex("[^0-9]"), "").trim()
         val cleanPass = newPass.trim()
+        val cleanEmail = (email ?: getAccountEmail(cleanCnic) ?: "").trim()
 
         // 1. Immediately cache locally
         prefs.edit().putString("pwd_$cleanCnic", cleanPass).apply()
+        if (cleanEmail.isNotBlank()) {
+            prefs.edit().putString("email_$cleanCnic", cleanEmail).apply()
+        }
 
-        // 2. Persist to Google Sheet Users tab
+        // 2. Persist to Google Sheet Users tab with Date & Time log
         try {
-            val res = PayslipApiClient.savePassword(cleanCnic, cleanPass)
+            val now = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.ENGLISH).format(java.util.Date())
+            val res = PayslipApiClient.savePassword(cleanCnic, cleanPass, cleanEmail, now)
             return@withContext res.success
         } catch (e: Exception) {
             e.printStackTrace()
             return@withContext false
         }
+    }
+
+    suspend fun saveEmailOnline(cnic: String, email: String): Boolean = withContext(Dispatchers.IO) {
+        val cleanCnic = cnic.replace(Regex("[^0-9]"), "").trim()
+        val cleanEmail = email.trim()
+
+        // 1. Immediately cache locally
+        setAccountEmail(cleanCnic, cleanEmail)
+
+        // 2. Persist to Google Sheet Users tab with Date & Time log
+        try {
+            val currentPass = getAccountPassword(cleanCnic)
+            val now = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.ENGLISH).format(java.util.Date())
+            
+            // Try explicit saveRecoveryEmail endpoint
+            val res1 = PayslipApiClient.saveRecoveryEmail(cleanCnic, cleanEmail, now)
+            // Also update savePassword endpoint with email parameter so both handlers are satisfied
+            val res2 = PayslipApiClient.savePassword(cleanCnic, currentPass, cleanEmail, now)
+
+            return@withContext (res1.success || res2.success)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return@withContext false
+        }
+    }
+
+    suspend fun fetchRecoveryEmailFromMaster(cnic: String): String? = withContext(Dispatchers.IO) {
+        val cleanCnic = cnic.replace(Regex("[^0-9]"), "").trim()
+        val masterSheetId = "164xqHxPq5Q6bS9-55pmp40Z-A03Vme3-GJbgKJ913tQ"
+        // Users tab gid is 1535137940
+        val url = "https://docs.google.com/spreadsheets/d/$masterSheetId/gviz/tq?tqx=out:csv&gid=1535137940"
+        try {
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 13)")
+                .header("Cache-Control", "no-cache")
+                .build()
+
+            val client = OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(15, TimeUnit.SECONDS)
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use null
+                val body = response.body?.string() ?: return@use null
+                val rows = parseCsv(body)
+                for (row in rows) {
+                    if (row.isNotEmpty()) {
+                        val rowCnic = row[0].replace(Regex("[^0-9]"), "").trim()
+                        if (rowCnic == cleanCnic) {
+                            // Column D (index 3) is recovery email
+                            if (row.size > 3) {
+                                val email = row[3].trim()
+                                if (email.isNotBlank() && email.contains("@")) {
+                                    setAccountEmail(cleanCnic, email)
+                                    return@withContext email
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        null
     }
 
     fun hasCustomPassword(cnic: String): Boolean {

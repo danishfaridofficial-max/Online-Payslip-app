@@ -89,11 +89,17 @@ fun PayslipPortalApp(viewModel: PayslipViewModel) {
                     .fillMaxWidth()
                     .weight(1f)
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
+                @OptIn(ExperimentalMaterial3Api::class)
+                androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+                    isRefreshing = state.isLoading,
+                    onRefresh = { viewModel.refreshPortal() },
+                    modifier = Modifier.fillMaxSize()
                 ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                    ) {
                     // 1. Header with Gradient, Notification Bell (Left) and Share App Button (Right)
                     PortalHeader(
                         currentDate = state.currentDateFormatted,
@@ -180,6 +186,7 @@ fun PayslipPortalApp(viewModel: PayslipViewModel) {
                                 onMonthSelect = { month ->
                                     viewModel.switchMonthSummaryOnly(month)
                                 },
+                                onRefreshClick = viewModel::refreshPortal,
                                 onViewPayslipClick = {
                                     showViewPayslipRewardedModal = true
                                 },
@@ -224,6 +231,7 @@ fun PayslipPortalApp(viewModel: PayslipViewModel) {
                     // 6. Footer (Full Width Edge-to-Edge)
                     PortalFooter()
                 }
+            }
 
                 // Loading Overlay (In-window overlay: prevents multi-Dialog Window crashes on Realme/ColorOS)
                 if (state.isLoading) {

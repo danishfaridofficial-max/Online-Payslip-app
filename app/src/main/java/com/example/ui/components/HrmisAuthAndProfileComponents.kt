@@ -609,6 +609,7 @@ fun HrmisProfileDashboard(
     onOpenNotificationsClick: () -> Unit = {},
     onShareAppClick: () -> Unit = {},
     onMonthSelect: (String) -> Unit = {},
+    onRefreshClick: () -> Unit = {},
     onViewPayslipClick: () -> Unit,
     onChangePasswordClick: () -> Unit,
     onEditEmailClick: () -> Unit,

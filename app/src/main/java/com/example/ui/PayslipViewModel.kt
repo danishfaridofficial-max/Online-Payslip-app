@@ -233,6 +233,7 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
 
     fun refreshPortal() {
         viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, loadingMessage = "تازہ ترین ڈیٹا گوگل شیٹ سے لائیو حاصل کیا جا رہا ہے...") }
             try {
                 val months = repository.getActiveMonthsFromMaster()
                 if (months.isNotEmpty()) {
@@ -241,15 +242,25 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
             } catch (_: Throwable) {}
 
             val state = _uiState.value
-            val latestMonth = state.availableMonths.firstOrNull() ?: "Oct"
+            val loggedInCnic = state.loggedInEmployee?.cnic ?: repository.getLoggedInCnic()
+            if (!loggedInCnic.isNullOrBlank()) {
+                val cleanCnic = loggedInCnic.replace(Regex("[^0-9]"), "")
+                val onlineEmail = repository.fetchRecoveryEmailFromMaster(cleanCnic)
+                if (!onlineEmail.isNullOrBlank()) {
+                    _uiState.update { it.copy(employeeEmail = onlineEmail) }
+                }
+            }
+
+            val latestMonth = _uiState.value.availableMonths.firstOrNull() ?: "Oct"
             if (state.isHrmisLoggedIn && state.loggedInEmployee != null) {
                 switchMonthSummaryOnly(latestMonth)
             } else {
                 _uiState.update {
                     it.copy(
                         selectedMonth = latestMonth,
-                        toastMessage = "پورٹل ریفریش ہو گیا ہے",
-                        toastType = "info"
+                        isLoading = false,
+                        toastMessage = "✓ پورٹل اور گوگل شیٹ کا ڈیٹا کامیابی سے ریفریش ہو گیا ہے۔",
+                        toastType = "success"
                     )
                 }
             }
@@ -603,6 +614,14 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
                             toastType = "success"
                         )
                     }
+
+                    // Background sync of recovery email from Google Sheet Users tab
+                    viewModelScope.launch {
+                        val onlineEmail = repository.fetchRecoveryEmailFromMaster(cleanCnic)
+                        if (!onlineEmail.isNullOrBlank()) {
+                            _uiState.update { it.copy(employeeEmail = onlineEmail) }
+                        }
+                    }
                 } else {
                     _uiState.update { it.copy(isLoading = false) }
                     showToast(result?.message ?: "اس شناختی کارڈ کا ڈیٹا بیس میں کوئی ریکارڈ نہیں ملا۔", "error")
@@ -719,15 +738,26 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
             }
 
             val savedEmail = repository.getAccountEmail(cleanCnic)
-            if (savedEmail.isNullOrBlank()) {
-                showToast("اس پروفائل میں کوئی ای میل درج نہیں ہے۔ براہ کرم 'پرسنل نمبر' کے ذریعے ری سیٹ کریں!", "warning")
-                return
-            }
-
-            if (savedEmail.equals(email, ignoreCase = true)) {
-                _uiState.update { it.copy(forgotStep = "new_password") }
+            if (!savedEmail.isNullOrBlank()) {
+                if (savedEmail.equals(email, ignoreCase = true)) {
+                    _uiState.update { it.copy(forgotStep = "new_password") }
+                } else {
+                    showToast("درج کردہ ای میل پروفائل کی ای میل سے میچ نہیں ہوئی!", "error")
+                }
             } else {
-                showToast("درج کردہ ای میل پروفائل کی ای میل سے میچ نہیں ہوئی!", "error")
+                // If local email was cleared or app reinstalled, verify directly from Google Sheet Users tab!
+                _uiState.update { it.copy(isLoading = true, loadingMessage = "گوگل شیٹ سے ای میل کی تصدیق کی جا رہی ہے...") }
+                viewModelScope.launch {
+                    val onlineEmail = repository.fetchRecoveryEmailFromMaster(cleanCnic)
+                    _uiState.update { it.copy(isLoading = false) }
+                    if (onlineEmail.isNullOrBlank()) {
+                        showToast("اس پروفائل میں کوئی ای میل درج نہیں ہے۔ براہ کرم 'پرسنل نمبر' کے ذریعے ری سیٹ کریں!", "warning")
+                    } else if (onlineEmail.equals(email, ignoreCase = true)) {
+                        _uiState.update { it.copy(forgotStep = "new_password") }
+                    } else {
+                        showToast("درج کردہ ای میل شیٹ میں موجود ای میل سے میچ نہیں ہوئی!", "error")
+                    }
+                }
             }
         }
     }
@@ -843,9 +873,20 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
                 it.copy(
                     employeeEmail = email,
                     showEditEmailModal = false,
-                    toastMessage = "✓ ریکوری ای میل کامیابی سے محفوظ ہو گئی ہے۔",
-                    toastType = "success"
+                    toastMessage = "✓ ریکوری ای میل گوگل شیٹ میں محفوظ کی جا رہی ہے...",
+                    toastType = "info"
                 )
+            }
+
+            viewModelScope.launch {
+                val success = repository.saveEmailOnline(cnic, email)
+                _uiState.update {
+                    it.copy(
+                        toastMessage = if (success) "✓ ریکوری ای میل گوگل شیٹ اور سسٹم میں تاریخ و وقت کے ساتھ محفوظ ہو گئی ہے۔"
+                        else "✓ ریکوری ای میل سسٹم میں کامیابی سے محفوظ ہو گئی ہے۔",
+                        toastType = "success"
+                    )
+                }
             }
         }
     }

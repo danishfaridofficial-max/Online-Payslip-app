@@ -146,20 +146,43 @@ fun PortalHeader(
                     }
                 }
 
-                // Right: Share App Button
-                IconButton(
-                    onClick = { onShareAppClick?.invoke() },
-                    modifier = Modifier
-                        .size(42.dp)
-                        .background(Color.White.copy(alpha = 0.18f), CircleShape)
-                        .testTag("portal_share_app_btn")
+                // Right: Refresh Button + Share App Button
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Share,
-                        contentDescription = "Share App",
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
+                    if (onRefreshClick != null) {
+                        IconButton(
+                            onClick = { onRefreshClick.invoke() },
+                            modifier = Modifier
+                                .size(42.dp)
+                                .background(Color.White.copy(alpha = 0.18f), CircleShape)
+                                .testTag("portal_header_refresh_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Refresh Portal",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    // Share App Button
+                    IconButton(
+                        onClick = { onShareAppClick?.invoke() },
+                        modifier = Modifier
+                            .size(42.dp)
+                            .background(Color.White.copy(alpha = 0.18f), CircleShape)
+                            .testTag("portal_share_app_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = "Share App",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
         }
