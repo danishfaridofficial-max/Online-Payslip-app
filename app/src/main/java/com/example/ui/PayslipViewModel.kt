@@ -340,6 +340,72 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun switchMonthSummaryOnly(month: String) {
+        val state = _uiState.value
+        val cleanQuery = (state.loggedInEmployee?.cnic?.replace("-", "")?.trim() ?: "")
+            .ifBlank { state.loginCnic.replace("-", "").trim() }
+            .ifBlank { state.searchQuery.replace("-", "").trim() }
+
+        _uiState.update {
+            it.copy(
+                selectedMonth = month,
+                isLoading = true,
+                loadingMessage = "$month 2026 کا ریکارڈ لوڈ ہو رہا ہے..."
+            )
+        }
+
+        viewModelScope.launch {
+            try {
+                val result = repository.searchPayslip(
+                    district = state.selectedDistrict.ifBlank { "Bannu" },
+                    category = state.selectedCategory.ifBlank { "Teaching" },
+                    month = month,
+                    year = state.selectedYear.ifBlank { "2026" },
+                    query = cleanQuery
+                )
+
+                if (result.success && result.data != null) {
+                    val updatedMonth = result.month?.ifBlank { month } ?: month
+                    val updatedYear = result.year?.ifBlank { state.selectedYear } ?: state.selectedYear
+
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            currentPayslip = result.data,
+                            loggedInEmployee = result.data,
+                            selectedMonth = updatedMonth,
+                            selectedYear = updatedYear,
+                            showPayslipModal = false,
+                            toastMessage = "$updatedMonth 2026 کی سیلری سمری اپ ڈیٹ ہو گئی!",
+                            toastType = "success"
+                        )
+                    }
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            selectedMonth = month,
+                            showPayslipModal = false
+                        )
+                    }
+                    val msg = result.message ?: "$month 2026 کا کوئی نیا ریکارڈ نہیں ملا۔"
+                    showToast(msg, "warning")
+                }
+            } catch (t: Throwable) {
+                _uiState.update { it.copy(isLoading = false, showPayslipModal = false) }
+                showToast("تکنیکی خرابی: ${t.localizedMessage ?: "کنکشن کی خرابی"}", "error")
+            }
+        }
+    }
+
+    fun openPayslipModal() {
+        if (_uiState.value.currentPayslip != null) {
+            _uiState.update { it.copy(showPayslipModal = true) }
+        } else {
+            onSearchClick()
+        }
+    }
+
     fun dismissPayslipModal() {
         _uiState.update { it.copy(showPayslipModal = false, showWhatsappPopup = false) }
     }

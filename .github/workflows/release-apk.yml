@@ -58,9 +58,10 @@ jobs:
           mkdir -p build-release
           APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
           if [ -f "$APK_PATH" ]; then
+            cp "$APK_PATH" build-release/OnlinePayslip.apk
             cp "$APK_PATH" build-release/OnlinePayslip-v1.0.apk
             cp "$APK_PATH" build-release/app-debug.apk
-            echo "APK ready at build-release/OnlinePayslip-v1.0.apk"
+            echo "APK ready at build-release/OnlinePayslip.apk"
           else
             echo "APK file not found!" && exit 1
           fi
@@ -69,7 +70,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: OnlinePayslip-APK
-          path: build-release/OnlinePayslip-v1.0.apk
+          path: build-release/OnlinePayslip.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -79,14 +80,18 @@ jobs:
         with:
           tag_name: v1.0.${{ github.run_number }}
           name: Online Payslip v1.0 (Build ${{ github.run_number }})
+          make_latest: true
           body: |
             ### Online Payslip Android APK
             
             Automatic Build from GitHub Actions.
+            - Build: ${{ github.run_number }}
             - Features: Official HRMIS Login, Real Firebase Messaging, Unity Ads Rewarded Flow, Live Traffic & PDF Export.
             
-            Download APK: Click below under Assets to download OnlinePayslip-v1.0.apk directly to your phone.
-          files: build-release/OnlinePayslip-v1.0.apk
+            Download APK: Click below under Assets to download OnlinePayslip.apk directly to your phone.
+          files: |
+            build-release/OnlinePayslip.apk
+            build-release/OnlinePayslip-v1.0.apk
           draft: false
           prerelease: false
         env:

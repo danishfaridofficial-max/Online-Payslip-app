@@ -141,9 +141,28 @@ fun PayslipPortalApp(viewModel: PayslipViewModel) {
                                 employee = state.loggedInEmployee!!,
                                 email = state.employeeEmail,
                                 selectedMonth = state.selectedMonth,
+                                hasUnreadNotifications = hasUnreadNotifications,
+                                onOpenNotificationsClick = {
+                                    (context as? com.example.MainActivity)?.requestNotificationPermission()
+                                    showInAppNotificationDialog = true
+                                },
+                                onShareAppClick = {
+                                    try {
+                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(Intent.EXTRA_SUBJECT, "Online Payslip KP Portal")
+                                            putExtra(
+                                                Intent.EXTRA_TEXT,
+                                                "خیبر پختونخوا آن لائن پے سلپ ایپ ڈاؤن لوڈ کریں:\nhttps://github.com/danishfaridofficial-max/Online-Payslip-app/releases/latest/download/OnlinePayslip.apk"
+                                            )
+                                        }
+                                        context.startActivity(Intent.createChooser(shareIntent, "ایپ شیئر کریں"))
+                                    } catch (_: Exception) {
+                                        scope.launch { snackbarHostState.showSnackbar("شیئر کرنے میں مسئلہ پیش آیا") }
+                                    }
+                                },
                                 onMonthSelect = { month ->
-                                    viewModel.onMonthSelected(month)
-                                    viewModel.onSearchClick()
+                                    viewModel.switchMonthSummaryOnly(month)
                                 },
                                 onViewPayslipClick = {
                                     showViewPayslipRewardedModal = true
@@ -244,7 +263,7 @@ fun PayslipPortalApp(viewModel: PayslipViewModel) {
                                 activity = activity,
                                 onRewardGranted = {
                                     viewModel.dismissWhatsappPopup()
-                                    viewModel.onSearchClick()
+                                    viewModel.openPayslipModal()
                                 },
                                 onRewardSkipped = {
                                     scope.launch {

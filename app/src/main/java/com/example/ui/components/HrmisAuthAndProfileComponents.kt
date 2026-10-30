@@ -604,6 +604,9 @@ fun HrmisProfileDashboard(
     employee: PayslipData,
     email: String?,
     selectedMonth: String = "Sep",
+    hasUnreadNotifications: Boolean = false,
+    onOpenNotificationsClick: () -> Unit = {},
+    onShareAppClick: () -> Unit = {},
     onMonthSelect: (String) -> Unit = {},
     onViewPayslipClick: () -> Unit,
     onChangePasswordClick: () -> Unit,
@@ -752,34 +755,96 @@ fun HrmisProfileDashboard(
                             }
                         }
 
-                        // Logout Button (Soft Red Styled)
-                        Surface(
-                            onClick = onLogoutClick,
-                            shape = RoundedCornerShape(12.dp),
-                            color = Color(0xFFFEF2F2),
-                            border = BorderStroke(1.dp, Color(0xFFFECACA)),
-                            modifier = Modifier.testTag("dashboard_logout_button")
+                        // Executive Action Buttons: Notifications Bell + Share App + Logout
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            // 1. Notification Bell Button (with Unread Badge)
+                            Surface(
+                                onClick = onOpenNotificationsClick,
+                                shape = CircleShape,
+                                color = Color(0xFFF0FDFA),
+                                border = BorderStroke(1.dp, Color(0xFFCCFBF1)),
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .testTag("dashboard_notification_bell_btn")
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Logout,
-                                    contentDescription = "Logout",
-                                    tint = Color(0xFFDC2626),
-                                    modifier = Modifier.size(15.dp)
-                                )
-                                Text(
-                                    text = "لاگ آؤٹ",
-                                    style = TextStyle(
-                                        fontFamily = NotoNastaliqFamily,
-                                        fontSize = 11.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color(0xFFDC2626)
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.NotificationsActive,
+                                        contentDescription = "Notifications",
+                                        tint = Color(0xFF0F766E),
+                                        modifier = Modifier.size(19.dp)
                                     )
-                                )
+                                    if (hasUnreadNotifications) {
+                                        Box(
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .padding(top = 4.dp, end = 4.dp)
+                                                .size(8.dp)
+                                                .background(Color(0xFFEF4444), CircleShape)
+                                                .border(1.dp, Color.White, CircleShape)
+                                        )
+                                    }
+                                }
+                            }
+
+                            // 2. Share App Button
+                            Surface(
+                                onClick = onShareAppClick,
+                                shape = CircleShape,
+                                color = Color(0xFFEFF6FF),
+                                border = BorderStroke(1.dp, Color(0xFFDBEAFE)),
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .testTag("dashboard_share_app_btn")
+                            ) {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Share,
+                                        contentDescription = "Share App",
+                                        tint = Color(0xFF2563EB),
+                                        modifier = Modifier.size(17.dp)
+                                    )
+                                }
+                            }
+
+                            // 3. Logout Button (Soft Red Styled)
+                            Surface(
+                                onClick = onLogoutClick,
+                                shape = RoundedCornerShape(10.dp),
+                                color = Color(0xFFFEF2F2),
+                                border = BorderStroke(1.dp, Color(0xFFFECACA)),
+                                modifier = Modifier.testTag("dashboard_logout_button")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Logout,
+                                        contentDescription = "Logout",
+                                        tint = Color(0xFFDC2626),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Text(
+                                        text = "لاگ آؤٹ",
+                                        style = TextStyle(
+                                            fontFamily = NotoNastaliqFamily,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFDC2626)
+                                        )
+                                    )
+                                }
                             }
                         }
                     }
@@ -1438,6 +1503,114 @@ fun HrmisProfileDashboard(
                             )
                             Icon(
                                 imageVector = Icons.Default.MailOutline,
+                                contentDescription = null,
+                                tint = Color(0xFF0D9488),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+
+                // Share App Action Tile
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { onShareAppClick() }
+                        .testTag("dashboard_share_app_tile"),
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color(0xFFEFF6FF)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ChevronLeft,
+                            contentDescription = null,
+                            tint = Color(0xFF2563EB)
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "ایپ دوستوں اور ساتھیوں کے ساتھ شیئر کریں",
+                                style = TextStyle(
+                                    fontFamily = NotoNastaliqFamily,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF1D4ED8)
+                                )
+                            )
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = null,
+                                tint = Color(0xFF2563EB),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+
+                // In-App Notifications Action Tile
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { onOpenNotificationsClick() }
+                        .testTag("dashboard_notifications_tile"),
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color(0xFFF0FDFA)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            if (hasUnreadNotifications) {
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = Color(0xFFFEE2E2)
+                                ) {
+                                    Text(
+                                        text = "نیا پیغام",
+                                        style = TextStyle(
+                                            fontFamily = NotoNastaliqFamily,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFDC2626)
+                                        ),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            Icon(
+                                imageVector = Icons.Default.ChevronLeft,
+                                contentDescription = null,
+                                tint = Color(0xFF0F766E)
+                            )
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "نوٹیفکیشنز اور اہم اعلانات",
+                                style = TextStyle(
+                                    fontFamily = NotoNastaliqFamily,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF0F766E)
+                                )
+                            )
+                            Icon(
+                                imageVector = Icons.Default.NotificationsActive,
                                 contentDescription = null,
                                 tint = Color(0xFF0D9488),
                                 modifier = Modifier.size(18.dp)
