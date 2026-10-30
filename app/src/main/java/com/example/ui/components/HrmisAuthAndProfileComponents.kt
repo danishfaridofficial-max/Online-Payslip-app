@@ -603,7 +603,8 @@ fun HrmisLoginCard(
 fun HrmisProfileDashboard(
     employee: PayslipData,
     email: String?,
-    selectedMonth: String = "Sep",
+    selectedMonth: String = "Oct",
+    availableMonths: List<String> = emptyList(),
     hasUnreadNotifications: Boolean = false,
     onOpenNotificationsClick: () -> Unit = {},
     onShareAppClick: () -> Unit = {},
@@ -858,7 +859,7 @@ fun HrmisProfileDashboard(
         }
 
         // 2. Quick Month Selector (Horizontal Pills Bar)
-        val quickMonths = listOf("Sep", "Aug", "Jul", "Jun", "May")
+        val quickMonths = if (availableMonths.isNotEmpty()) availableMonths else listOf("Oct", "Sep", "Aug", "Jul", "Jun", "May")
         Column(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -1015,49 +1016,105 @@ fun HrmisProfileDashboard(
                     )
                 }
 
-                // Net Payable Figures
+                // Net Payable Hero Display (Full Width, No Collision)
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "خالص تنخواہ (Net Payable)",
+                        style = TextStyle(
+                            fontFamily = NotoNastaliqFamily,
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFF99F6E4)
+                        )
+                    )
+                    Text(
+                        text = "Rs. ${employee.netPay}",
+                        style = TextStyle(
+                            fontFamily = FontFamily.SansSerif,
+                            fontSize = 26.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color.White,
+                            letterSpacing = 0.5.sp
+                        )
+                    )
+                }
+
+                // Gross Pay & Deductions in 2 Clean Responsive Chips
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Bottom
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Column {
-                        Text(
-                            text = "خالص تنخواہ (Net Payable)",
-                            style = TextStyle(
-                                fontFamily = NotoNastaliqFamily,
-                                fontSize = 12.sp,
-                                color = Color(0xFF99F6E4)
+                    // Total Deductions Chip
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFFEF4444).copy(alpha = 0.15f),
+                        border = BorderStroke(0.8.dp, Color(0xFFF87171).copy(alpha = 0.35f))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = "کل کٹوتیاں (Deductions)",
+                                style = TextStyle(
+                                    fontFamily = NotoNastaliqFamily,
+                                    fontSize = 10.sp,
+                                    color = Color(0xFFFCA5A5)
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
-                        )
-                        Text(
-                            text = "Rs. ${employee.netPay}",
-                            style = TextStyle(
-                                fontFamily = FontFamily.SansSerif,
-                                fontSize = 24.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
+                            Text(
+                                text = "Rs. ${employee.totalDeductions}",
+                                style = TextStyle(
+                                    fontFamily = FontFamily.SansSerif,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFFECACA)
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
-                        )
+                        }
                     }
 
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            text = "کل کٹوتیاں: Rs. ${employee.totalDeductions}",
-                            style = TextStyle(
-                                fontFamily = FontFamily.SansSerif,
-                                fontSize = 11.5.sp,
-                                color = Color(0xFFFCA5A5)
+                    // Gross Pay Chip
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFF14B8A6).copy(alpha = 0.15f),
+                        border = BorderStroke(0.8.dp, Color(0xFF2DD4BF).copy(alpha = 0.35f))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = "مجموعی تنخواہ (Gross)",
+                                style = TextStyle(
+                                    fontFamily = NotoNastaliqFamily,
+                                    fontSize = 10.sp,
+                                    color = Color(0xFF99F6E4)
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
-                        )
-                        Text(
-                            text = "مجموعی تنخواہ: Rs. ${employee.grossPay}",
-                            style = TextStyle(
-                                fontFamily = FontFamily.SansSerif,
-                                fontSize = 11.5.sp,
-                                color = Color(0xFFCBD5E1)
+                            Text(
+                                text = "Rs. ${employee.grossPay}",
+                                style = TextStyle(
+                                    fontFamily = FontFamily.SansSerif,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
-                        )
+                        }
                     }
                 }
 
@@ -1088,7 +1145,10 @@ fun HrmisProfileDashboard(
                                 fontSize = 10.5.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF5EEAD4)
-                            )
+                            ),
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             text = "کٹوتیاں (Deductions): $dedPct%",
@@ -1096,8 +1156,10 @@ fun HrmisProfileDashboard(
                                 fontFamily = NotoNastaliqFamily,
                                 fontSize = 10.5.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFFFCA5A5)
-                            )
+                                color = Color(0xFFFCA5A5),
+                                textAlign = TextAlign.End
+                            ),
+                            maxLines = 1
                         )
                     }
 

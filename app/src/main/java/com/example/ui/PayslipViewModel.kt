@@ -22,7 +22,8 @@ data class PayslipUiState(
     val availableDistricts: List<String> = listOf("Bannu", "Lakki Marwat"),
     val activeDistricts: List<String> = listOf("Bannu"),
     val selectedCategory: String = "District",
-    val selectedMonth: String = "Sep",
+    val availableMonths: List<String> = listOf("Oct", "Sep", "Aug", "Jul", "Jun", "May"),
+    val selectedMonth: String = "Oct",
     val selectedYear: String = "2026",
     val searchQuery: String = "",
     val personalNumberQuery: String = "",
@@ -101,6 +102,14 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
                 val dists = repository.getAvailableDistricts()
                 if (dists.isNotEmpty()) {
                     _uiState.update { it.copy(availableDistricts = dists) }
+                }
+            } catch (_: Throwable) {}
+
+            try {
+                val months = repository.getActiveMonthsFromMaster()
+                if (months.isNotEmpty()) {
+                    val latest = months.first()
+                    _uiState.update { it.copy(availableMonths = months, selectedMonth = latest) }
                 }
             } catch (_: Throwable) {}
 
@@ -488,15 +497,16 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
                 val initialCategory = if (state.selectedCategory.isNotBlank()) state.selectedCategory else "District"
                 val searchYear = if (state.selectedYear.isNotBlank()) state.selectedYear else "2026"
 
-                // Descending months to find the latest uploaded payslip in the sheet (Sep -> Aug -> Jul -> Jun -> May)
-                val scanMonths = listOf("Sep", "Aug", "Jul", "Jun", "May")
+                // Descending active months (Oct -> Sep -> Aug -> Jul -> Jun -> May)
+                val scanMonths = if (state.availableMonths.isNotEmpty()) state.availableMonths else listOf("Oct", "Sep", "Aug", "Jul", "Jun", "May")
+                val fallbackMonth = scanMonths.firstOrNull() ?: "Oct"
                 // Scan categories: primary category first, then Federal, Provincial, District
                 val scanCategories = listOf(initialCategory) + listOf("District", "Federal", "Provincial").filter { it != initialCategory }
 
                 var result: com.example.data.model.PayslipResponse? = null
                 var detectedCategory = initialCategory
                 var detectedDistrict = initialDistrict
-                var detectedMonth = "Sep"
+                var detectedMonth = fallbackMonth
 
                 // Smart auto-detection loop
                 outerScan@ for (cat in scanCategories) {
@@ -525,18 +535,18 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
                         val sample = PayslipEngine.getSamplePayslip(
                             district = initialDistrict,
                             category = initialCategory,
-                            month = "Sep",
+                            month = fallbackMonth,
                             year = "2026",
                             query = cleanCnic
                         )
                         result = com.example.data.model.PayslipResponse(
                             success = true,
                             category = initialCategory,
-                            month = "Sep",
+                            month = fallbackMonth,
                             year = "2026",
                             data = sample
                         )
-                        detectedMonth = "Sep"
+                        detectedMonth = fallbackMonth
                     }
                 }
 

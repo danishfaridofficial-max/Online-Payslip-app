@@ -10,11 +10,53 @@ import com.example.data.model.PayslipResponse
 import com.example.data.model.TrafficResponse
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.util.concurrent.TimeUnit
 import java.util.UUID
 
 class PayslipRepository(context: Context) {
 
     private val prefs: SharedPreferences = context.getSharedPreferences("payslip_portal_prefs", Context.MODE_PRIVATE)
+
+    suspend fun getActiveMonthsFromMaster(): List<String> = withContext(Dispatchers.IO) {
+        val masterSheetId = "164xqHxPq5Q6bS9-55pmp40Z-A03Vme3-GJbgKJ913tQ"
+        val url = "https://docs.google.com/spreadsheets/d/$masterSheetId/gviz/tq?tqx=out:csv&gid=0&range=A2:D20"
+        try {
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 13)")
+                .header("Cache-Control", "no-cache")
+                .build()
+
+            val client = OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(15, TimeUnit.SECONDS)
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use emptyList<String>()
+                val body = response.body?.string() ?: return@use emptyList<String>()
+                val months = mutableListOf<String>()
+                val regex = Regex("\"([^\"]*)\"")
+                val matches = regex.findAll(body).map { it.groupValues[1] }.toList()
+                var i = 0
+                while (i + 3 < matches.size) {
+                    val m = matches[i].trim()
+                    val status = matches[i + 3].trim()
+                    if (status.equals("Active", ignoreCase = true) && m.isNotBlank()) {
+                        months.add(m)
+                    }
+                    i += 4
+                }
+                if (months.isNotEmpty()) {
+                    return@withContext months.reversed()
+                }
+            }
+        } catch (_: Exception) {}
+
+        listOf("Oct", "Sep", "Aug", "Jul", "Jun", "May")
+    }
 
     fun getOrGenerateUserId(): String {
         var userId = prefs.getString("user_id", null)

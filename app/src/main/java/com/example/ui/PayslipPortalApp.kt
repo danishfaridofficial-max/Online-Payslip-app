@@ -157,6 +157,7 @@ fun PayslipPortalApp(viewModel: PayslipViewModel) {
                                 employee = state.loggedInEmployee!!,
                                 email = state.employeeEmail,
                                 selectedMonth = state.selectedMonth,
+                                availableMonths = state.availableMonths,
                                 hasUnreadNotifications = hasUnreadNotifications,
                                 onOpenNotificationsClick = {
                                     (context as? com.example.MainActivity)?.requestNotificationPermission()
