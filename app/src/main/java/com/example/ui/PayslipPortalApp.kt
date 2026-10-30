@@ -129,8 +129,7 @@ fun PayslipPortalApp(viewModel: PayslipViewModel) {
                             scope.launch { snackbarHostState.showSnackbar("یہ پورٹل ڈیٹا بیس کی تلاش کے لیے محفوظ ترین اصولوں کا استعمال کرتا ہے۔") }
                         },
                         onRefreshClick = {
-                            viewModel.onResetClick()
-                            scope.launch { snackbarHostState.showSnackbar("پورٹل ریفریش ہو گیا ہے") }
+                            viewModel.refreshPortal()
                         }
                     )
 

@@ -231,12 +231,38 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
         )
     }
 
+    fun refreshPortal() {
+        viewModelScope.launch {
+            try {
+                val months = repository.getActiveMonthsFromMaster()
+                if (months.isNotEmpty()) {
+                    _uiState.update { it.copy(availableMonths = months) }
+                }
+            } catch (_: Throwable) {}
+
+            val state = _uiState.value
+            val latestMonth = state.availableMonths.firstOrNull() ?: "Oct"
+            if (state.isHrmisLoggedIn && state.loggedInEmployee != null) {
+                switchMonthSummaryOnly(latestMonth)
+            } else {
+                _uiState.update {
+                    it.copy(
+                        selectedMonth = latestMonth,
+                        toastMessage = "پورٹل ریفریش ہو گیا ہے",
+                        toastType = "info"
+                    )
+                }
+            }
+        }
+    }
+
     fun onResetClick() {
         val state = _uiState.value
+        val defaultMonth = state.availableMonths.firstOrNull() ?: "Oct"
         if (state.isHrmisLoggedIn && state.loggedInEmployee != null) {
             _uiState.update {
                 it.copy(
-                    selectedMonth = "Sep",
+                    selectedMonth = defaultMonth,
                     selectedYear = "2026",
                     toastMessage = "فارم ڈیفالٹ پر ری سیٹ کر دیا گیا ہے",
                     toastType = "info"
@@ -247,7 +273,7 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
                 it.copy(
                     selectedDistrict = "Bannu",
                     selectedCategory = "District",
-                    selectedMonth = "Sep",
+                    selectedMonth = defaultMonth,
                     selectedYear = "2026",
                     searchQuery = "",
                     personalNumberQuery = "",
@@ -497,9 +523,11 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
                 val initialCategory = if (state.selectedCategory.isNotBlank()) state.selectedCategory else "District"
                 val searchYear = if (state.selectedYear.isNotBlank()) state.selectedYear else "2026"
 
-                // Descending active months (Oct -> Sep -> Aug -> Jul -> Jun -> May)
-                val scanMonths = if (state.availableMonths.isNotEmpty()) state.availableMonths else listOf("Oct", "Sep", "Aug", "Jul", "Jun", "May")
-                val fallbackMonth = scanMonths.firstOrNull() ?: "Oct"
+                // Fetch fresh live active months from Master Sheet at login
+                val liveMonths = try { repository.getActiveMonthsFromMaster() } catch (_: Exception) { emptyList() }
+                val scanMonths = if (liveMonths.isNotEmpty()) liveMonths else (if (state.availableMonths.isNotEmpty()) state.availableMonths else listOf("Nov", "Oct", "Sep", "Aug", "Jul", "Jun", "May"))
+                _uiState.update { it.copy(availableMonths = scanMonths) }
+                val fallbackMonth = scanMonths.firstOrNull() ?: "Nov"
                 // Scan categories: primary category first, then Federal, Provincial, District
                 val scanCategories = listOf(initialCategory) + listOf("District", "Federal", "Provincial").filter { it != initialCategory }
 

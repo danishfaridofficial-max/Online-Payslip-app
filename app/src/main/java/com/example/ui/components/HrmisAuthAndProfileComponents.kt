@@ -1030,8 +1030,17 @@ fun HrmisProfileDashboard(
                             color = Color(0xFF99F6E4)
                         )
                     )
+                    val displayNetPay = remember(employee.netPay) {
+                        val clean = employee.netPay.replace(",", "").trim()
+                        val num = clean.toDoubleOrNull()
+                        if (num != null) {
+                            String.format(java.util.Locale.ENGLISH, "%,.2f", num)
+                        } else {
+                            employee.netPay
+                        }
+                    }
                     Text(
-                        text = "Rs. ${employee.netPay}",
+                        text = "Rs. $displayNetPay",
                         style = TextStyle(
                             fontFamily = FontFamily.SansSerif,
                             fontSize = 26.sp,
@@ -1118,11 +1127,17 @@ fun HrmisProfileDashboard(
                     }
                 }
 
-                // Visual Income vs Deductions Progress Bar
-                val netNum = employee.netPay.replace(Regex("[^0-9]"), "").toDoubleOrNull() ?: 0.0
-                val dedNum = employee.totalDeductions.replace(Regex("[^0-9]"), "").toDoubleOrNull() ?: 0.0
-                val grossNum = employee.grossPay.replace(Regex("[^0-9]"), "").toDoubleOrNull() ?: (netNum + dedNum)
-                val netPct = if (grossNum > 0) ((netNum / grossNum) * 100).toInt().coerceIn(10, 95) else 84
+                // Visual Income vs Deductions Progress Bar (Correct Decimal & Currency Parsing)
+                val cleanNet = employee.netPay.replace(",", "").trim()
+                val netNum = cleanNet.toDoubleOrNull() ?: cleanNet.replace(Regex("[^0-9.]"), "").toDoubleOrNull() ?: 0.0
+
+                val cleanDed = employee.totalDeductions.replace(",", "").trim()
+                val dedNum = cleanDed.toDoubleOrNull() ?: cleanDed.replace(Regex("[^0-9.]"), "").toDoubleOrNull() ?: 0.0
+
+                val cleanGross = employee.grossPay.replace(",", "").trim()
+                val grossNum = cleanGross.toDoubleOrNull() ?: cleanGross.replace(Regex("[^0-9.]"), "").toDoubleOrNull() ?: (netNum + dedNum)
+
+                val netPct = if (grossNum > 0) ((netNum / grossNum) * 100).toInt().coerceIn(5, 95) else 78
                 val dedPct = (100 - netPct).coerceAtLeast(5)
 
                 Column(
