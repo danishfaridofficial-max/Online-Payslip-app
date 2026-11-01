@@ -439,7 +439,7 @@ fun InAppNotificationDialog(
                         }
                         Column {
                             Text(
-                                text = "نوٹیفیکیشنز (Firebase)",
+                                text = "سرکاری نوٹیفیکیشنز",
                                 style = TextStyle(
                                     fontFamily = NotoNastaliqFamily,
                                     fontSize = 17.sp,
@@ -507,7 +507,7 @@ fun InAppNotificationDialog(
                             )
                         )
                         Text(
-                            text = "جب آپ فائر بیس کنسول (Firebase Messaging) سے کوئی نیا کیمپین یا نوٹیفکیشن بھیجیں گے، تو وہ خودکار طور پر یہاں دکھائی دے گا۔",
+                            text = "نئی پے سلپس، الاؤنسز اور تنخواہ کے سرکاری اعلانات موصول ہونے پر یہاں نظر آئیں گے۔",
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                             style = TextStyle(
                                 fontFamily = NotoNastaliqFamily,

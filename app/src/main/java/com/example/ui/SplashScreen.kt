@@ -45,6 +45,7 @@ import kotlinx.coroutines.delay
 
 @Composable
 fun SplashScreen(
+    isReady: Boolean = false,
     onTimeout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -53,10 +54,14 @@ fun SplashScreen(
     val alpha = remember { Animatable(0f) }
     val progress = remember { Animatable(0f) }
 
-    // Start 2-second splash timer and animations
-    LaunchedEffect(Unit) {
-        // Guaranteed wall-clock timeout after 2 seconds even if animations are disabled/throttled
+    // Smooth coordination: Allow at least 2000ms for brand animation,
+    // and wait for background data loading (isReady) up to max 3500ms timeout
+    LaunchedEffect(isReady) {
+        val startTime = System.currentTimeMillis()
         delay(2000L)
+        while (!isReady && System.currentTimeMillis() - startTime < 3500L) {
+            delay(100L)
+        }
         onTimeout()
     }
 

@@ -167,9 +167,12 @@ fun HrmisLoginCard(
     onTogglePasswordVisibility: () -> Unit,
     onLoginClick: () -> Unit,
     onForgotPasswordClick: () -> Unit,
+    onCategorySelected: (String) -> Unit = {},
+    onDistrictSelected: (String) -> Unit = {},
     onSwitchToGuestSearch: (() -> Unit)? = null
 ) {
     val focusManager = LocalFocusManager.current
+    var districtExpanded by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier
@@ -335,6 +338,182 @@ fun HrmisLoginCard(
                                 ),
                                 modifier = Modifier.weight(1f)
                             )
+                        }
+                    }
+                }
+            }
+
+            // Field 0: Category Selector Tabs (District, Provincial, Federal)
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "ملازم کی کیٹیگری منتخب کریں (Select Category):",
+                    style = TextStyle(
+                        fontFamily = NotoNastaliqFamily,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1E293B),
+                        textAlign = TextAlign.Right
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+
+                val categories = listOf(
+                    Triple("District", "ضلعی ملازمین", "District"),
+                    Triple("Provincial", "صوبائی ملازمین", "Provincial"),
+                    Triple("Federal", "وفاقی ملازمین", "Federal")
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    categories.forEach { (catKey, urduTitle, enTitle) ->
+                        val isSelected = state.selectedCategory.equals(catKey, ignoreCase = true)
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { onCategorySelected(catKey) }
+                                .testTag("login_cat_$catKey"),
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isSelected) Color(0xFF0F766E) else Color(0xFFF8FAFC),
+                            border = BorderStroke(
+                                width = if (isSelected) 1.5.dp else 1.dp,
+                                color = if (isSelected) Color(0xFF0F766E) else Color(0xFFCBD5E1)
+                            ),
+                            shadowElevation = if (isSelected) 2.dp else 0.dp
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp, horizontal = 4.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Text(
+                                    text = urduTitle,
+                                    style = TextStyle(
+                                        fontFamily = NotoNastaliqFamily,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelected) Color.White else Color(0xFF334155),
+                                        textAlign = TextAlign.Center
+                                    )
+                                )
+                                Text(
+                                    text = enTitle,
+                                    style = TextStyle(
+                                        fontFamily = FontFamily.SansSerif,
+                                        fontSize = 10.sp,
+                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                        color = if (isSelected) Color(0xFFCCFBF1) else Color(0xFF64748B),
+                                        textAlign = TextAlign.Center
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // District Selector (Visible for District and Provincial categories)
+            if (!state.selectedCategory.equals("Federal", ignoreCase = true)) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "ضلع منتخب کریں (District):",
+                        style = TextStyle(
+                            fontFamily = NotoNastaliqFamily,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF1E293B),
+                            textAlign = TextAlign.Right
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { districtExpanded = !districtExpanded }
+                                .testTag("login_district_selector"),
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color(0xFFF8FAFC),
+                            border = BorderStroke(1.dp, Color(0xFFCBD5E1))
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 11.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDropDown,
+                                    contentDescription = "Dropdown",
+                                    tint = Color(0xFF0F766E),
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Text(
+                                    text = state.selectedDistrict,
+                                    style = TextStyle(
+                                        fontFamily = FontFamily.SansSerif,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color(0xFF0F766E)
+                                    )
+                                )
+                            }
+                        }
+
+                        DropdownMenu(
+                            expanded = districtExpanded,
+                            onDismissRequest = { districtExpanded = false },
+                            modifier = Modifier
+                                .widthIn(min = 180.dp, max = 260.dp)
+                                .background(Color.White),
+                            shape = RoundedCornerShape(12.dp),
+                            shadowElevation = 6.dp,
+                            border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+                        ) {
+                            state.availableDistricts.forEach { dist ->
+                                val isSelected = state.selectedDistrict == dist
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = dist,
+                                                style = TextStyle(
+                                                    fontFamily = FontFamily.SansSerif,
+                                                    fontSize = 14.sp,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                    color = if (isSelected) Color(0xFF0D9488) else Color(0xFF1E293B)
+                                                )
+                                            )
+                                            if (isSelected) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Check,
+                                                    contentDescription = "Selected",
+                                                    tint = Color(0xFF0D9488),
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                        }
+                                    },
+                                    onClick = {
+                                        onDistrictSelected(dist)
+                                        districtExpanded = false
+                                    },
+                                    modifier = Modifier.background(if (isSelected) Color(0xFFF0FDFA) else Color.Transparent)
+                                )
+                            }
                         }
                     }
                 }

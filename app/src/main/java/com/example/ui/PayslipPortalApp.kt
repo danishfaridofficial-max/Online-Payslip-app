@@ -154,7 +154,9 @@ fun PayslipPortalApp(viewModel: PayslipViewModel) {
                                 onPasswordChanged = viewModel::onLoginPasswordChanged,
                                 onTogglePasswordVisibility = viewModel::onTogglePasswordVisibility,
                                 onLoginClick = viewModel::onHrmisLogin,
-                                onForgotPasswordClick = viewModel::onOpenForgotPasswordModal
+                                onForgotPasswordClick = viewModel::onOpenForgotPasswordModal,
+                                onCategorySelected = viewModel::onCategorySelected,
+                                onDistrictSelected = viewModel::onDistrictSelected
                             )
                         } else {
                             // 1. Logged-in Employee Portal Dashboard (Executive Top Bar + Quick Month Pills + Breakdown + Service Profile)

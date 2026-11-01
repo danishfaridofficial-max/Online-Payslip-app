@@ -6,7 +6,11 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.engine.PayslipEngine
 import com.example.data.model.PayslipData
 import com.example.data.repository.PayslipRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -62,7 +66,8 @@ data class PayslipUiState(
     val popupText: String = "اگر آپ چاہتے ہیں کہ اگلے مہینے کی سیلری اپڈیٹ نوٹیفیکیشنز سب سے پہلے آپ کے واٹس ایپ پر ملیں، تو ابھی جوائن کریں!",
     val popupLink: String = "https://whatsapp.com/channel/0029VaCK4y0EquiKbkl09S1A",
     val popupStatus: String = "show",
-    val currentDateFormatted: String = ""
+    val currentDateFormatted: String = "",
+    val isAppReady: Boolean = false
 )
 
 class PayslipViewModel(application: Application) : AndroidViewModel(application) {
@@ -97,29 +102,33 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
 
     private fun loadInitialData() {
         viewModelScope.launch {
-            // Stagger network calls slightly so low-end CPUs don't spike during Splash -> Home transition
             try {
-                val dists = repository.getAvailableDistricts()
-                if (dists.isNotEmpty()) {
-                    _uiState.update { it.copy(availableDistricts = dists) }
+                // Fetch districts, active months, and banner in parallel on Dispatchers.IO during Splash Screen
+                val distsDeferred = async(Dispatchers.IO) {
+                    try { repository.getAvailableDistricts() } catch (_: Throwable) { emptyList() }
                 }
-            } catch (_: Throwable) {}
-
-            try {
-                val months = repository.getActiveMonthsFromMaster()
-                if (months.isNotEmpty()) {
-                    val latest = months.first()
-                    _uiState.update { it.copy(availableMonths = months, selectedMonth = latest) }
+                val monthsDeferred = async(Dispatchers.IO) {
+                    try { repository.getActiveMonthsFromMaster() } catch (_: Throwable) { emptyList() }
                 }
-            } catch (_: Throwable) {}
+                val bannerDeferred = async(Dispatchers.IO) {
+                    try { repository.fetchBanner() } catch (_: Throwable) { null }
+                }
 
-            delay(300L)
+                val dists = distsDeferred.await()
+                val months = monthsDeferred.await()
+                val banner = bannerDeferred.await()
 
-            try {
-                val banner = repository.fetchBanner()
-                if (banner.success) {
-                    _uiState.update { state ->
-                        state.copy(
+                _uiState.update { state ->
+                    var updated = state
+                    if (dists.isNotEmpty()) {
+                        updated = updated.copy(availableDistricts = dists)
+                    }
+                    if (months.isNotEmpty()) {
+                        val latest = months.first()
+                        updated = updated.copy(availableMonths = months, selectedMonth = latest)
+                    }
+                    if (banner != null && banner.success) {
+                        updated = updated.copy(
                             bannerHeading = banner.bannerHeading?.ifBlank { state.bannerHeading } ?: state.bannerHeading,
                             bannerText = banner.bannerText?.ifBlank { state.bannerText } ?: state.bannerText,
                             bannerLink = banner.bannerLink?.ifBlank { state.bannerLink } ?: state.bannerLink,
@@ -129,8 +138,11 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
                             popupLink = banner.popupLink?.ifBlank { state.popupLink } ?: state.popupLink
                         )
                     }
+                    updated.copy(isAppReady = true)
                 }
-            } catch (_: Throwable) {}
+            } catch (_: Throwable) {
+                _uiState.update { it.copy(isAppReady = true) }
+            }
         }
     }
 
@@ -404,7 +416,7 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
             try {
                 val result = repository.searchPayslip(
                     district = state.selectedDistrict.ifBlank { "Bannu" },
-                    category = state.selectedCategory.ifBlank { "Teaching" },
+                    category = state.selectedCategory.ifBlank { "District" },
                     month = month,
                     year = state.selectedYear.ifBlank { "2026" },
                     query = cleanQuery
@@ -539,31 +551,73 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
                 val scanMonths = if (liveMonths.isNotEmpty()) liveMonths else (if (state.availableMonths.isNotEmpty()) state.availableMonths else listOf("Nov", "Oct", "Sep", "Aug", "Jul", "Jun", "May"))
                 _uiState.update { it.copy(availableMonths = scanMonths) }
                 val fallbackMonth = scanMonths.firstOrNull() ?: "Nov"
-                // Scan categories: primary category first, then Federal, Provincial, District
-                val scanCategories = listOf(initialCategory) + listOf("District", "Federal", "Provincial").filter { it != initialCategory }
+                // Scan categories: prioritized primary category first, then Provincial, District, Federal
+                val allCats = listOf("District", "Provincial", "Federal")
+                val scanCategories = listOf(initialCategory) + allCats.filter { !it.equals(initialCategory, ignoreCase = true) }
 
                 var result: com.example.data.model.PayslipResponse? = null
                 var detectedCategory = initialCategory
                 var detectedDistrict = initialDistrict
                 var detectedMonth = fallbackMonth
 
-                // Smart auto-detection loop
-                outerScan@ for (cat in scanCategories) {
-                    val dist = if (cat == "Federal") "Federal" else initialDistrict
-                    for (m in scanMonths) {
+                // Smart fast parallel scan across all 3 categories for recent active months
+                // This guarantees that Provincial (e.g. Police) and Federal employees log in within 4-7 seconds
+                // without getting blocked on slow sequential District scanning!
+                val topMonths = scanMonths.take(2)
+                for (m in topMonths) {
+                    if (result != null && result.success && result.data != null) break
+
+                    coroutineScope {
+                        val deferredSearches = scanCategories.map { cat ->
+                            val dist = if (cat.equals("Federal", ignoreCase = true)) "Federal" else initialDistrict
+                            async {
+                                try {
+                                    val r = repository.searchPayslip(
+                                        district = dist,
+                                        category = cat,
+                                        month = m,
+                                        year = searchYear,
+                                        query = cleanCnic
+                                    )
+                                    if (r.success && r.data != null) {
+                                        Triple(cat, dist, r)
+                                    } else {
+                                        null
+                                    }
+                                } catch (_: Throwable) {
+                                    null
+                                }
+                            }
+                        }
+
+                        val found = deferredSearches.awaitAll().firstOrNull { it != null }
+                        if (found != null) {
+                            detectedCategory = found.first
+                            detectedDistrict = found.second
+                            result = found.third
+                            detectedMonth = found.third.month?.ifBlank { m } ?: m
+                        }
+                    }
+                }
+
+                // If not found in top 2 months, check remaining months for the detected/primary category
+                if (result == null || !result.success || result.data == null) {
+                    val remainingMonths = scanMonths.drop(2)
+                    for (m in remainingMonths) {
+                        val dist = if (initialCategory.equals("Federal", ignoreCase = true)) "Federal" else initialDistrict
                         val monthResult = repository.searchPayslip(
                             district = dist,
-                            category = cat,
+                            category = initialCategory,
                             month = m,
                             year = searchYear,
                             query = cleanCnic
                         )
                         if (monthResult.success && monthResult.data != null) {
                             result = monthResult
-                            detectedCategory = cat
+                            detectedCategory = initialCategory
                             detectedDistrict = dist
                             detectedMonth = monthResult.month?.ifBlank { m } ?: m
-                            break@outerScan
+                            break
                         }
                     }
                 }
@@ -704,13 +758,30 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
 
             viewModelScope.launch {
                 try {
-                    val result = repository.searchPayslip(
+                    var result = repository.searchPayslip(
                         district = state.selectedDistrict,
                         category = state.selectedCategory,
                         month = state.selectedMonth,
                         year = state.selectedYear,
                         query = cleanCnic
                     )
+
+                    if (!result.success || result.data == null) {
+                        for (otherCat in listOf("Provincial", "District", "Federal").filter { it != state.selectedCategory }) {
+                            val otherDist = if (otherCat.equals("Federal", ignoreCase = true)) "Federal" else state.selectedDistrict
+                            val r = repository.searchPayslip(
+                                district = otherDist,
+                                category = otherCat,
+                                month = state.selectedMonth,
+                                year = state.selectedYear,
+                                query = cleanCnic
+                            )
+                            if (r.success && r.data != null) {
+                                result = r
+                                break
+                            }
+                        }
+                    }
 
                     _uiState.update { it.copy(isLoading = false) }
 
