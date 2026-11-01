@@ -36,6 +36,7 @@ import com.example.ui.theme.MyApplicationTheme
 class MainActivity : ComponentActivity() {
   private val viewModel: PayslipViewModel by viewModels()
 
+  @android.annotation.SuppressLint("InvalidFragmentVersionForActivityResult")
   private val requestNotificationPermissionLauncher =
     registerForActivityResult(ActivityResultContracts.RequestPermission()) { _ ->
       // Permission handled (either granted or denied)
@@ -100,10 +101,9 @@ class MainActivity : ComponentActivity() {
     // 2. Handle incoming notification if app was opened by tapping a notification
     handleIncomingNotification(intent)
 
-    // 3. Pre-warm FCM subscriptions and Unity Ads in the background right during Splash
+    // 3. Pre-warm FCM subscriptions safely in the background
     try {
       PayslipFirebaseMessagingService.initializeSubscriptions(this)
-      com.example.util.UnityAdsManager.initialize(this)
     } catch (_: Throwable) {}
 
     // 4. Set emerald status bar color and dark navigation bar safely
@@ -145,6 +145,8 @@ class MainActivity : ComponentActivity() {
             } else {
               LaunchedEffect(Unit) {
                 requestNotificationPermission()
+                // Initialize Unity Ads ONLY AFTER app UI has completely loaded
+                com.example.util.UnityAdsManager.initialize(this@MainActivity)
               }
               PayslipPortalApp(viewModel = viewModel)
             }

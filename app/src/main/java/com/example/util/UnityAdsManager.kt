@@ -1,6 +1,7 @@
 package com.example.util
 
 import android.app.Activity
+import android.app.ActivityManager
 import android.content.Context
 import android.content.ContextWrapper
 import android.os.Handler
@@ -130,13 +131,33 @@ object UnityAdsManager {
     }
 
     /**
+     * Checks if the current device is a low-RAM device (e.g. Android Go or <= 2GB RAM).
+     */
+    fun isLowRamDevice(context: Context): Boolean {
+        return try {
+            val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            am?.isLowRamDevice == true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
      * Initializes Unity Ads SDK and preloads Rewarded and Interstitial ads.
+     * Skips initialization on low-RAM devices to avoid WebView OOM crashes.
      */
     fun initialize(context: Context, testMode: Boolean = TEST_MODE) {
         installBackgroundCrashShield(context)
+        val appContext = context.applicationContext ?: return
+
+        // Skip Unity Ads on low-RAM devices to protect stability and prevent OS kill
+        if (isLowRamDevice(appContext)) {
+            Log.i(TAG, "Low RAM device detected (ActivityManager.isLowRamDevice = true). Skipping Unity Ads initialization to preserve memory.")
+            return
+        }
+
         if (isInitializing) return
         currentTestMode = testMode
-        val appContext = context.applicationContext ?: return
 
         mainHandler.post {
             try {

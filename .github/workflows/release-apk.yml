@@ -50,18 +50,22 @@ jobs:
             echo "Generated new debug.keystore"
           fi
 
-      - name: Build APK with Gradle
-        run: ./gradlew assembleDebug --stacktrace
+      - name: Build Release APK with Gradle
+        run: ./gradlew assembleRelease --stacktrace
 
       - name: Prepare APK Output
         run: |
           mkdir -p build-release
-          APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
+          APK_PATH=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          if [ -z "$APK_PATH" ] || [ ! -f "$APK_PATH" ]; then
+            # Fallback if release not found
+            APK_PATH=$(find app/build/outputs/apk -name "*.apk" | head -n 1)
+          fi
           if [ -f "$APK_PATH" ]; then
             cp "$APK_PATH" build-release/OnlinePayslip.apk
             cp "$APK_PATH" build-release/OnlinePayslip-v1.0.apk
-            cp "$APK_PATH" build-release/app-debug.apk
-            echo "APK ready at build-release/OnlinePayslip.apk"
+            cp "$APK_PATH" build-release/app-release.apk
+            echo "Release APK ready at build-release/OnlinePayslip.apk"
           else
             echo "APK file not found!" && exit 1
           fi

@@ -67,7 +67,9 @@ fun MyApplicationTheme(
       else -> LightColorScheme
     }
 
+  val typography = rememberUrduTypography()
+
   CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-    MaterialTheme(colorScheme = colorScheme, typography = Typography, content = content)
+    MaterialTheme(colorScheme = colorScheme, typography = typography, content = content)
   }
 }

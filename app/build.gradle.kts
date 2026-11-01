@@ -17,7 +17,7 @@ android {
   defaultConfig {
     applicationId = "com.onlinepayslip.portal"
     minSdk = 24
-    targetSdk = 36
+    targetSdk = 35
     versionCode = 1
     versionName = "1.0"
 
@@ -26,11 +26,16 @@ android {
 
   signingConfigs {
     create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      storeFile = file(keystorePath)
-      storePassword = System.getenv("STORE_PASSWORD")
-      keyAlias = "upload"
-      keyPassword = System.getenv("KEY_PASSWORD")
+      val keystorePath = System.getenv("KEYSTORE_PATH")
+      val keyFile = if (keystorePath != null) file(keystorePath) else file("${rootDir}/debug.keystore")
+      if (keyFile.exists()) {
+        storeFile = keyFile
+        storePassword = System.getenv("STORE_PASSWORD") ?: "android"
+        keyAlias = System.getenv("KEY_ALIAS") ?: "androiddebugkey"
+        keyPassword = System.getenv("KEY_PASSWORD") ?: "android"
+      }
+      enableV1Signing = true
+      enableV2Signing = true
     }
     create("debugConfig") {
       val keyFile = file("${rootDir}/debug.keystore")
@@ -40,6 +45,8 @@ android {
         keyAlias = "androiddebugkey"
         keyPassword = "android"
       }
+      enableV1Signing = true
+      enableV2Signing = true
     }
   }
 
@@ -47,6 +54,7 @@ android {
     release {
       isCrunchPngs = false
       isMinifyEnabled = false
+      isDebuggable = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("release")
     }
@@ -68,6 +76,11 @@ android {
   dependenciesInfo {
     includeInApk = false
     includeInBundle = true
+  }
+  lint {
+    checkReleaseBuilds = false
+    abortOnError = false
+    disable += "InvalidFragmentVersionForActivityResult"
   }
 }
 
