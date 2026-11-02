@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.engine.PayslipEngine
 import com.example.data.model.PayslipData
 import com.example.data.repository.PayslipRepository
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -546,56 +547,93 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
                 val initialCategory = if (state.selectedCategory.isNotBlank()) state.selectedCategory else "District"
                 val searchYear = if (state.selectedYear.isNotBlank()) state.selectedYear else "2026"
 
-                // Fetch fresh live active months from Master Sheet at login
+                // Fetch fresh live active months from Master Sheet at login (cached 1 hour in repository)
                 val liveMonths = try { repository.getActiveMonthsFromMaster() } catch (_: Exception) { emptyList() }
                 val scanMonths = if (liveMonths.isNotEmpty()) liveMonths else (if (state.availableMonths.isNotEmpty()) state.availableMonths else listOf("Nov", "Oct", "Sep", "Aug", "Jul", "Jun", "May"))
                 _uiState.update { it.copy(availableMonths = scanMonths) }
                 val fallbackMonth = scanMonths.firstOrNull() ?: "Nov"
-                // Scan categories: prioritized primary category first, then Provincial, District, Federal
+
+                // All categories and fallback categories
                 val allCats = listOf("District", "Provincial", "Federal")
-                val scanCategories = listOf(initialCategory) + allCats.filter { !it.equals(initialCategory, ignoreCase = true) }
+                val fallbackCategories = allCats.filter { !it.equals(initialCategory, ignoreCase = true) }
 
                 var result: com.example.data.model.PayslipResponse? = null
                 var detectedCategory = initialCategory
                 var detectedDistrict = initialDistrict
                 var detectedMonth = fallbackMonth
 
-                // Smart fast parallel scan across all 3 categories for recent active months
-                // This guarantees that Provincial (e.g. Police) and Federal employees log in within 4-7 seconds
-                // without getting blocked on slow sequential District scanning!
+                // Month logic: Search recent active months (e.g. November first, then October)
                 val topMonths = scanMonths.take(2)
                 for (m in topMonths) {
                     if (result != null && result.success && result.data != null) break
 
+                    // Step 1: Search ONLY the user's selected category first!
+                    val dist = if (initialCategory.equals("Federal", ignoreCase = true)) "Federal" else initialDistrict
+                    val primaryResult = try {
+                        repository.searchPayslip(
+                            district = dist,
+                            category = initialCategory,
+                            month = m,
+                            year = searchYear,
+                            query = cleanCnic
+                        )
+                    } catch (_: Throwable) {
+                        null
+                    }
+
+                    if (primaryResult != null && primaryResult.success && primaryResult.data != null) {
+                        val returnedCnic = primaryResult.data.cnic.replace(Regex("[^0-9]"), "").trim()
+                        if (returnedCnic.isEmpty() || returnedCnic == cleanCnic) {
+                            detectedCategory = initialCategory
+                            detectedDistrict = dist
+                            result = primaryResult
+                            detectedMonth = primaryResult.month?.ifBlank { m } ?: m
+                            break // Instant login! Do not call any other categories!
+                        }
+                    }
+
+                    // Step 2: Fallback ONLY if selected category returned Not Found in this month
+                    // Run remaining fallback categories concurrently, returning the FIRST valid match immediately!
                     coroutineScope {
-                        val deferredSearches = scanCategories.map { cat ->
-                            val dist = if (cat.equals("Federal", ignoreCase = true)) "Federal" else initialDistrict
-                            async {
+                        val foundDeferred = CompletableDeferred<Triple<String, String, com.example.data.model.PayslipResponse>?>()
+                        var completedCount = 0
+                        val totalFallback = fallbackCategories.size
+                        val jobs = fallbackCategories.map { cat ->
+                            val catDist = if (cat.equals("Federal", ignoreCase = true)) "Federal" else initialDistrict
+                            launch {
                                 try {
                                     val r = repository.searchPayslip(
-                                        district = dist,
+                                        district = catDist,
                                         category = cat,
                                         month = m,
                                         year = searchYear,
                                         query = cleanCnic
                                     )
                                     if (r.success && r.data != null) {
-                                        Triple(cat, dist, r)
-                                    } else {
-                                        null
+                                        val returnedCnic = r.data.cnic.replace(Regex("[^0-9]"), "").trim()
+                                        if (returnedCnic.isEmpty() || returnedCnic == cleanCnic) {
+                                            foundDeferred.complete(Triple(cat, catDist, r))
+                                        }
                                     }
                                 } catch (_: Throwable) {
-                                    null
+                                } finally {
+                                    synchronized(this@coroutineScope) {
+                                        completedCount++
+                                        if (completedCount >= totalFallback && !foundDeferred.isCompleted) {
+                                            foundDeferred.complete(null)
+                                        }
+                                    }
                                 }
                             }
                         }
 
-                        val found = deferredSearches.awaitAll().firstOrNull { it != null }
-                        if (found != null) {
-                            detectedCategory = found.first
-                            detectedDistrict = found.second
-                            result = found.third
-                            detectedMonth = found.third.month?.ifBlank { m } ?: m
+                        val fallbackFound = foundDeferred.await()
+                        jobs.forEach { it.cancel() }
+                        if (fallbackFound != null) {
+                            detectedCategory = fallbackFound.first
+                            detectedDistrict = fallbackFound.second
+                            result = fallbackFound.third
+                            detectedMonth = fallbackFound.third.month?.ifBlank { m } ?: m
                         }
                     }
                 }
@@ -605,19 +643,26 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
                     val remainingMonths = scanMonths.drop(2)
                     for (m in remainingMonths) {
                         val dist = if (initialCategory.equals("Federal", ignoreCase = true)) "Federal" else initialDistrict
-                        val monthResult = repository.searchPayslip(
-                            district = dist,
-                            category = initialCategory,
-                            month = m,
-                            year = searchYear,
-                            query = cleanCnic
-                        )
-                        if (monthResult.success && monthResult.data != null) {
-                            result = monthResult
-                            detectedCategory = initialCategory
-                            detectedDistrict = dist
-                            detectedMonth = monthResult.month?.ifBlank { m } ?: m
-                            break
+                        val monthResult = try {
+                            repository.searchPayslip(
+                                district = dist,
+                                category = initialCategory,
+                                month = m,
+                                year = searchYear,
+                                query = cleanCnic
+                            )
+                        } catch (_: Throwable) {
+                            null
+                        }
+                        if (monthResult != null && monthResult.success && monthResult.data != null) {
+                            val returnedCnic = monthResult.data.cnic.replace(Regex("[^0-9]"), "").trim()
+                            if (returnedCnic.isEmpty() || returnedCnic == cleanCnic) {
+                                result = monthResult
+                                detectedCategory = initialCategory
+                                detectedDistrict = dist
+                                detectedMonth = monthResult.month?.ifBlank { m } ?: m
+                                break
+                            }
                         }
                     }
                 }
@@ -644,6 +689,14 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
                 }
 
                 if (result != null && result.success && result.data != null) {
+                    // Strict CNIC verification: ensure the returned record matches logged in user
+                    val returnedCnic = result.data.cnic.replace(Regex("[^0-9]"), "").trim()
+                    if (returnedCnic.isNotEmpty() && returnedCnic != cleanCnic) {
+                        _uiState.update { it.copy(isLoading = false) }
+                        showToast("شناختی کارڈ نمبر میچ نہیں ہوا۔", "error")
+                        return@launch
+                    }
+
                     repository.setLoggedInCnic(cleanCnic)
                     val email = repository.getAccountEmail(cleanCnic)
                     val activeMonth = result.month?.ifBlank { detectedMonth } ?: detectedMonth

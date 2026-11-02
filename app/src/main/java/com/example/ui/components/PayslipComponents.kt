@@ -385,6 +385,10 @@ fun InAppNotificationDialog(
     onClearAll: () -> Unit
 ) {
     BackHandler(onBack = onDismiss)
+    val context = LocalContext.current
+    val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+    val fcmToken by com.example.data.NotificationStore.fcmToken.collectAsState()
+    val activeToken = fcmToken ?: com.example.data.NotificationStore.getSavedFcmToken(context)
 
     Box(
         modifier = Modifier
@@ -411,7 +415,9 @@ fun InAppNotificationDialog(
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
         ) {
             Column(
-                modifier = Modifier.padding(20.dp),
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 // Header
@@ -585,12 +591,118 @@ fun InAppNotificationDialog(
                             }
                         }
                     }
+                }
 
-                    // Bottom Actions
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                // FCM Token & Diagnostic Card for Firebase Console
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color(0xFFF8FAFC),
+                    border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "فائر بیس نوٹیفیکیشن ٹیسٹنگ (FCM)",
+                                style = TextStyle(
+                                    fontFamily = NotoNastaliqFamily,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.5.sp,
+                                    color = Color(0xFF0F766E)
+                                )
+                            )
+
+                            Button(
+                                onClick = {
+                                    if (!activeToken.isNullOrBlank()) {
+                                        clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(activeToken))
+                                        Toast.makeText(context, "FCM Token کاپی ہو گیا! Firebase Console میں پیسٹ کریں۔", Toast.LENGTH_LONG).show()
+                                    } else {
+                                        Toast.makeText(context, "FCM Token لوڈ ہو رہا ہے، براہ کرم ایک سیکنڈ بعد دوبارہ کلک کریں۔", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488))
+                            ) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(13.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Token کاپی کریں", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        // Display the token text directly for quick viewing
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFFE2E8F0),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            androidx.compose.foundation.text.selection.SelectionContainer {
+                                Text(
+                                    text = activeToken ?: "FCM Token تیار ہو رہا ہے...",
+                                    fontSize = 10.sp,
+                                    color = Color(0xFF334155),
+                                    maxLines = 2,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
+
+                        // Local Test Notification Button
+                        OutlinedButton(
+                            onClick = {
+                                (context as? android.app.Activity)?.let { act ->
+                                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                                        (act as? com.example.MainActivity)?.requestNotificationPermission()
+                                    }
+                                }
+                                com.example.service.PayslipFirebaseMessagingService.triggerTestNotification(context)
+                                Toast.makeText(context, "ٹیسٹ نوٹیفکیشن بھیج دیا گیا ہے!", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, Color(0xFF10B981)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF047857))
+                        ) {
+                            Icon(Icons.Default.NotificationsActive, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("🔔 موبائل پر ٹیسٹ نوٹیفکیشن چلا کر چیک کریں", fontFamily = NotoNastaliqFamily, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        // Firebase Console Instructions Note
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFFECFDF5),
+                            border = BorderStroke(0.5.dp, Color(0xFFA7F3D0)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text(
+                                    text = "💡 Firebase Console سے نوٹیفکیشن بھیجنے کا طریقہ:",
+                                    style = TextStyle(fontFamily = NotoNastaliqFamily, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color(0xFF065F46))
+                                )
+                                Text(
+                                    text = "1. فوری ٹیسٹ: اوپر دیے گئے 'Token کاپی کریں' بٹن سے ٹوکن لیں اور Firebase Console میں 'Send test message' پر کلک کر کے پیسٹ کریں۔ فوراً موصول ہوگا۔\n2. سب کو بھیجیں: Campaign بناتے وقت Target میں 'Topic' منتخب کریں اور نام all_users درج کریں۔",
+                                    style = TextStyle(fontFamily = NotoNastaliqFamily, fontSize = 10.5.sp, color = Color(0xFF047857), lineHeight = 16.sp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Bottom Actions
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (notifications.isNotEmpty()) {
                         OutlinedButton(
                             onClick = onClearAll,
                             modifier = Modifier.weight(1f),
@@ -600,15 +712,15 @@ fun InAppNotificationDialog(
                             Spacer(modifier = Modifier.width(4.dp))
                             Text("صاف کریں", fontFamily = NotoNastaliqFamily)
                         }
+                    }
 
-                        Button(
-                            onClick = onDismiss,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F766E))
-                        ) {
-                            Text("بند کریں", fontFamily = NotoNastaliqFamily, fontWeight = FontWeight.Bold)
-                        }
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F766E))
+                    ) {
+                        Text("بند کریں", fontFamily = NotoNastaliqFamily, fontWeight = FontWeight.Bold)
                     }
                 }
             }

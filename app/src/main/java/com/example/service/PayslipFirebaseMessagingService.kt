@@ -21,6 +21,9 @@ class PayslipFirebaseMessagingService : FirebaseMessagingService() {
     override fun onNewToken(token: String) {
         super.onNewToken(token)
         Log.d(TAG, "Refreshed FCM Token: $token")
+        try {
+            NotificationStore.saveFcmToken(applicationContext, token)
+        } catch (_: Throwable) {}
         subscribeAllTopics()
     }
 
@@ -39,7 +42,7 @@ class PayslipFirebaseMessagingService : FirebaseMessagingService() {
             ?: remoteMessage.data["text"]
             ?: "آپ کے لیے نئی اپڈیٹ موجود ہے۔"
 
-        showNotification(title, body)
+        showNotification(applicationContext, title, body)
 
         try {
             NotificationStore.addNotification(applicationContext, title, body)
@@ -48,52 +51,36 @@ class PayslipFirebaseMessagingService : FirebaseMessagingService() {
         }
     }
 
-    private fun showNotification(title: String, message: String) {
-        createNotificationChannel(applicationContext)
-
-        val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-            putExtra("notification_title", title)
-            putExtra("notification_body", message)
-            putExtra("from_fcm", true)
-        }
-
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            System.currentTimeMillis().toInt(),
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setColor(0xFF0D9488.toInt())
-            .setContentTitle(title)
-            .setContentText(message)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setSound(defaultSoundUri)
-            .setVibrate(longArrayOf(0, 300, 200, 300))
-            .setAutoCancel(true)
-            .setContentIntent(pendingIntent)
-            .build()
-
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.notify(System.currentTimeMillis().toInt(), notification)
-    }
-
     companion object {
         const val TAG = "PayslipFCM"
         const val CHANNEL_ID = "payslip_portal_notifications"
-        private val TOPICS = listOf("all_users", "all", "payslip_updates", "news_updates", "general")
+        private val TOPICS = listOf(
+            "all_users",
+            "all",
+            "allusers",
+            "users",
+            "payslip_updates",
+            "payslip",
+            "updates",
+            "news_updates",
+            "news",
+            "general",
+            "onlinepayslip",
+            "portal",
+            "announcements"
+        )
 
         fun createNotificationChannel(context: Context) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                 val existing = notificationManager.getNotificationChannel(CHANNEL_ID)
                 if (existing == null) {
+                    val defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                    val audioAttributes = android.media.AudioAttributes.Builder()
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION)
+                        .build()
+
                     val channel = NotificationChannel(
                         CHANNEL_ID,
                         "تنخواہ اور نوٹیفیکیشنز (Payslip Updates)",
@@ -104,10 +91,52 @@ class PayslipFirebaseMessagingService : FirebaseMessagingService() {
                         lightColor = 0xFF0D9488.toInt()
                         enableVibration(true)
                         vibrationPattern = longArrayOf(0, 300, 200, 300)
+                        setSound(defaultSoundUri, audioAttributes)
                         setShowBadge(true)
+                        lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
                     }
                     notificationManager.createNotificationChannel(channel)
                 }
+            }
+        }
+
+        fun showNotification(context: Context, title: String, message: String) {
+            try {
+                createNotificationChannel(context)
+
+                val intent = Intent(context, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    putExtra("notification_title", title)
+                    putExtra("notification_body", message)
+                    putExtra("from_fcm", true)
+                }
+
+                val pendingIntent = PendingIntent.getActivity(
+                    context,
+                    System.currentTimeMillis().toInt(),
+                    intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+
+                val defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+
+                val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+                    .setSmallIcon(R.drawable.ic_notification)
+                    .setColor(0xFF0D9488.toInt())
+                    .setContentTitle(title)
+                    .setContentText(message)
+                    .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+                    .setPriority(NotificationCompat.PRIORITY_HIGH)
+                    .setSound(defaultSoundUri)
+                    .setVibrate(longArrayOf(0, 300, 200, 300))
+                    .setAutoCancel(true)
+                    .setContentIntent(pendingIntent)
+                    .build()
+
+                val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.notify(System.currentTimeMillis().toInt(), notification)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error displaying notification", e)
             }
         }
 
@@ -132,13 +161,22 @@ class PayslipFirebaseMessagingService : FirebaseMessagingService() {
 
             try {
                 FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
-                    if (task.isSuccessful) {
-                        Log.d(TAG, "Active FCM Token: ${task.result}")
+                    if (task.isSuccessful && !task.result.isNullOrBlank()) {
+                        val token = task.result
+                        Log.d(TAG, "Active FCM Token: $token")
+                        NotificationStore.saveFcmToken(context, token)
                     }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed getting FCM token", e)
             }
+        }
+
+        fun triggerTestNotification(context: Context) {
+            val title = "سرکاری پے سلپ اطلاع (ٹیسٹ)"
+            val message = "مبارک ہو! آپ کی ڈیوائس پر نوٹیفیکیشن سسٹم، آواز اور وائبریشن بالکل درست کام کر رہے ہیں۔"
+            showNotification(context, title, message)
+            NotificationStore.addNotification(context, title, message)
         }
     }
 }

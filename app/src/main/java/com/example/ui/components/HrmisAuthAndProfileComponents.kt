@@ -1094,7 +1094,11 @@ fun HrmisProfileDashboard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 quickMonths.forEach { m ->
-                    val isSelected = selectedMonth.equals(m, ignoreCase = true) || employee.monthYear.contains(m, ignoreCase = true)
+                    val isSelected = if (selectedMonth.isNotBlank()) {
+                        selectedMonth.equals(m, ignoreCase = true)
+                    } else {
+                        employee.monthYear.contains(m, ignoreCase = true)
+                    }
                     Surface(
                         onClick = { onMonthSelect(m) },
                         shape = RoundedCornerShape(12.dp),
@@ -1156,7 +1160,11 @@ fun HrmisProfileDashboard(
                             color = Color(0xFF0D9488)
                         ) {
                             Text(
-                                text = employee.monthYear.ifBlank { "Current Month" },
+                                text = if (selectedMonth.isNotBlank() && !employee.monthYear.contains(selectedMonth, ignoreCase = true)) {
+                                    "$selectedMonth-2026"
+                                } else {
+                                    employee.monthYear.ifBlank { "Current Month" }
+                                },
                                 style = TextStyle(
                                     fontFamily = FontFamily.SansSerif,
                                     fontSize = 11.sp,

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "964621085853",
+    "project_id": "online-paylisp",
+    "storage_bucket": "online-paylisp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:964621085853:android:7e752337f570980d62f874",
+        "android_client_info": {
+          "package_name": "com.onlinepayslip.portal"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBPNkc-Beh7TE3AkrH3FW0vfJPfgGwDldU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

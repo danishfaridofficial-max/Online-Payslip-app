@@ -20,12 +20,16 @@ object NotificationStore {
     private const val PREF_NAME = "payslip_notifications_pref"
     private const val KEY_NOTIFICATIONS = "saved_notifications"
     private const val KEY_HAS_UNREAD = "has_unread_notification"
+    private const val KEY_FCM_TOKEN = "saved_fcm_token"
 
     private val _notifications = MutableStateFlow<List<AppNotification>>(emptyList())
     val notifications: StateFlow<List<AppNotification>> = _notifications.asStateFlow()
 
     private val _hasUnread = MutableStateFlow(false)
     val hasUnread: StateFlow<Boolean> = _hasUnread.asStateFlow()
+
+    private val _fcmToken = MutableStateFlow<String?>(null)
+    val fcmToken: StateFlow<String?> = _fcmToken.asStateFlow()
 
     fun init(context: Context) {
         val prefs = getPrefs(context)
@@ -37,6 +41,7 @@ object NotificationStore {
     }
 
     private fun loadFromPrefs(prefs: SharedPreferences) {
+        _fcmToken.value = prefs.getString(KEY_FCM_TOKEN, null)
         val jsonStr = prefs.getString(KEY_NOTIFICATIONS, null)
         val list = mutableListOf<AppNotification>()
         if (!jsonStr.isNullOrBlank()) {
@@ -126,5 +131,15 @@ object NotificationStore {
         getPrefs(context).edit().clear().apply()
         _notifications.value = emptyList()
         _hasUnread.value = false
+    }
+
+    fun saveFcmToken(context: Context, token: String) {
+        if (token.isBlank()) return
+        _fcmToken.value = token
+        getPrefs(context).edit().putString(KEY_FCM_TOKEN, token).apply()
+    }
+
+    fun getSavedFcmToken(context: Context): String? {
+        return _fcmToken.value ?: getPrefs(context).getString(KEY_FCM_TOKEN, null)
     }
 }

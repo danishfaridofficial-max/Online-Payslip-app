@@ -69,7 +69,30 @@ class PayslipRepository(context: Context) {
         return rows
     }
 
-    suspend fun getActiveMonthsFromMaster(): List<String> = withContext(Dispatchers.IO) {
+    @Volatile
+    private var cachedActiveMonths: List<String>? = null
+    private var cachedActiveMonthsTimestamp: Long = 0L
+    private val ACTIVE_MONTHS_CACHE_DURATION_MS = 60 * 60 * 1000L // 1 hour cache
+
+    suspend fun getActiveMonthsFromMaster(forceRefresh: Boolean = false): List<String> = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        // 1. Check in-memory cache
+        if (!forceRefresh && cachedActiveMonths != null && (now - cachedActiveMonthsTimestamp) < ACTIVE_MONTHS_CACHE_DURATION_MS) {
+            return@withContext cachedActiveMonths!!
+        }
+
+        // 2. Check SharedPreferences cache
+        val prefsMonths = prefs.getString("cached_active_months", null)
+        val prefsTime = prefs.getLong("cached_active_months_time", 0L)
+        if (!forceRefresh && cachedActiveMonths == null && !prefsMonths.isNullOrBlank() && (now - prefsTime) < ACTIVE_MONTHS_CACHE_DURATION_MS) {
+            val list = prefsMonths.split(",").map { it.trim() }.filter { it.isNotBlank() }
+            if (list.isNotEmpty()) {
+                cachedActiveMonths = list
+                cachedActiveMonthsTimestamp = prefsTime
+                return@withContext list
+            }
+        }
+
         val masterSheetId = "164xqHxPq5Q6bS9-55pmp40Z-A03Vme3-GJbgKJ913tQ"
         val url = "https://docs.google.com/spreadsheets/d/$masterSheetId/gviz/tq?tqx=out:csv&gid=0"
         try {
@@ -99,12 +122,21 @@ class PayslipRepository(context: Context) {
                     }
                 }
                 if (months.isNotEmpty()) {
-                    return@withContext months.reversed()
+                    val resultList = months.reversed()
+                    cachedActiveMonths = resultList
+                    cachedActiveMonthsTimestamp = now
+                    prefs.edit()
+                        .putString("cached_active_months", resultList.joinToString(","))
+                        .putLong("cached_active_months_time", now)
+                        .apply()
+                    return@withContext resultList
                 }
             }
         } catch (_: Exception) {}
 
-        listOf("Oct", "Sep", "Aug", "Jul", "Jun", "May")
+        if (cachedActiveMonths != null) return@withContext cachedActiveMonths!!
+
+        listOf("Nov", "Oct", "Sep", "Aug", "Jul", "Jun", "May")
     }
 
     fun getOrGenerateUserId(): String {
