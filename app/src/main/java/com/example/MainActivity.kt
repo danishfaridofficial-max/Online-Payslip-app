@@ -145,6 +145,7 @@ class MainActivity : ComponentActivity() {
             } else {
               LaunchedEffect(Unit) {
                 requestNotificationPermission()
+                NotificationStore.fetchFcmToken(this@MainActivity)
                 // Initialize Unity Ads ONLY AFTER app UI has completely loaded
                 com.example.util.UnityAdsManager.initialize(this@MainActivity)
               }

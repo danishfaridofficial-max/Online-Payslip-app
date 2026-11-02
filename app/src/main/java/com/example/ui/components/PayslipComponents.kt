@@ -389,6 +389,18 @@ fun InAppNotificationDialog(
     val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
     val fcmToken by com.example.data.NotificationStore.fcmToken.collectAsState()
     val activeToken = fcmToken ?: com.example.data.NotificationStore.getSavedFcmToken(context)
+    var isFetchingToken by remember { mutableStateOf(false) }
+    var tokenErrorMessage by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        if (activeToken.isNullOrBlank()) {
+            isFetchingToken = true
+            com.example.data.NotificationStore.fetchFcmToken(context) { _, err ->
+                isFetchingToken = false
+                tokenErrorMessage = err
+            }
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -625,33 +637,61 @@ fun InAppNotificationDialog(
                                         clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(activeToken))
                                         Toast.makeText(context, "FCM Token کاپی ہو گیا! Firebase Console میں پیسٹ کریں۔", Toast.LENGTH_LONG).show()
                                     } else {
-                                        Toast.makeText(context, "FCM Token لوڈ ہو رہا ہے، براہ کرم ایک سیکنڈ بعد دوبارہ کلک کریں۔", Toast.LENGTH_SHORT).show()
+                                        isFetchingToken = true
+                                        Toast.makeText(context, "FCM Token حاصل کیا جا رہا ہے...", Toast.LENGTH_SHORT).show()
+                                        com.example.data.NotificationStore.fetchFcmToken(context) { token, err ->
+                                            isFetchingToken = false
+                                            tokenErrorMessage = err
+                                            if (!token.isNullOrBlank()) {
+                                                clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(token))
+                                                Toast.makeText(context, "FCM Token فوراً کاپی ہو گیا!", Toast.LENGTH_LONG).show()
+                                            } else {
+                                                Toast.makeText(context, "ٹوکن لوڈ نہیں ہوا: ${err ?: "انٹرنیٹ چیک کریں"}", Toast.LENGTH_LONG).show()
+                                            }
+                                        }
                                     }
                                 },
                                 shape = RoundedCornerShape(8.dp),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488))
                             ) {
-                                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(13.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Token کاپی کریں", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                if (isFetchingToken) {
+                                    CircularProgressIndicator(
+                                        color = Color.White,
+                                        modifier = Modifier.size(13.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("لوڈ ہو رہا ہے...", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                } else {
+                                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(13.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(if (!activeToken.isNullOrBlank()) "Token کاپی کریں" else "Token لوڈ کریں", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
 
                         // Display the token text directly for quick viewing
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFFE2E8F0),
+                            color = if (!activeToken.isNullOrBlank()) Color(0xFFE2E8F0) else Color(0xFFFEF2F2),
+                            border = BorderStroke(0.5.dp, if (!activeToken.isNullOrBlank()) Color(0xFFCBD5E1) else Color(0xFFFECACA)),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            androidx.compose.foundation.text.selection.SelectionContainer {
-                                Text(
-                                    text = activeToken ?: "FCM Token تیار ہو رہا ہے...",
-                                    fontSize = 10.sp,
-                                    color = Color(0xFF334155),
-                                    maxLines = 2,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
-                                )
+                            Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                                androidx.compose.foundation.text.selection.SelectionContainer {
+                                    Text(
+                                        text = when {
+                                            !activeToken.isNullOrBlank() -> activeToken
+                                            isFetchingToken -> "⏳ Token لوڈ ہو رہا ہے، براہ کرم چند سیکنڈ انتظار کریں..."
+                                            !tokenErrorMessage.isNullOrBlank() -> "⚠️ $tokenErrorMessage (اوپر 'Token لوڈ کریں' دبائیں)"
+                                            else -> "FCM Token تیار ہو رہا ہے... اوپر 'Token لوڈ کریں' پر کلک کریں۔"
+                                        },
+                                        fontSize = 10.sp,
+                                        color = if (!activeToken.isNullOrBlank()) Color(0xFF334155) else Color(0xFF991B1B),
+                                        maxLines = 3
+                                    )
+                                }
                             }
                         }
 

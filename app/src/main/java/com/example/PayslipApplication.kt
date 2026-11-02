@@ -19,8 +19,9 @@ class PayslipApplication : Application() {
         UnityAdsManager.installBackgroundCrashShield(this)
         com.example.data.NotificationStore.init(this)
 
-        // 2. Pre-register Notification Channel & subscribe to FCM topics immediately
+        // 2. Initialize FirebaseApp explicitly & subscribe to FCM topics immediately
         try {
+            com.google.firebase.FirebaseApp.initializeApp(this)
             PayslipFirebaseMessagingService.initializeSubscriptions(this)
         } catch (_: Throwable) {}
 
