@@ -85,6 +85,7 @@ import kotlinx.coroutines.withContext
 fun PortalHeader(
     currentDate: String,
     hasUnreadNotifications: Boolean = false,
+    unreadCount: Int = 0,
     onOpenWhatsappClick: (() -> Unit)? = null,
     onOpenSecurityNoticeClick: (() -> Unit)? = null,
     onOpenNotificationsClick: (() -> Unit)? = null,
@@ -135,13 +136,23 @@ fun PortalHeader(
                             modifier = Modifier.size(22.dp)
                         )
                         if (hasUnreadNotifications) {
-                            // Red badge indicator dot only when there's an actual unread notification
+                            // Red badge indicator dot or count badge when unread
                             Box(
                                 modifier = Modifier
-                                    .size(9.dp)
+                                    .size(if (unreadCount > 1) 18.dp else 10.dp)
                                     .background(Color(0xFFEF4444), CircleShape)
-                                    .border(1.dp, Color.White, CircleShape)
-                            )
+                                    .border(1.5.dp, Color.White, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (unreadCount > 1) {
+                                    Text(
+                                        text = if (unreadCount > 9) "9+" else "$unreadCount",
+                                        color = Color.White,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -393,6 +404,7 @@ fun InAppNotificationDialog(
     var tokenErrorMessage by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
+        com.example.data.NotificationStore.markAllAsRead(context)
         if (activeToken.isNullOrBlank()) {
             isFetchingToken = true
             com.example.data.NotificationStore.fetchFcmToken(context) { _, err ->
@@ -492,6 +504,57 @@ fun InAppNotificationDialog(
                 }
 
                 HorizontalDivider(color = Color(0xFFF1F5F9))
+
+                // Check system notification permission
+                val areNotificationsEnabled = androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()
+                if (!areNotificationsEnabled) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFFFEF2F2),
+                        border = BorderStroke(1.dp, Color(0xFFEF4444)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFDC2626), modifier = Modifier.size(20.dp))
+                                Text(
+                                    text = "موبائل پر نوٹیفکیشن بند ہے!",
+                                    style = TextStyle(fontFamily = NotoNastaliqFamily, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF991B1B))
+                                )
+                            }
+                            Text(
+                                text = "آپ کے فون کی سیٹنگز میں اس ایپ کے نوٹیفکیشن بند ہیں۔ موصول کرنے کے لیے نیچے بٹن دبا کر سیٹنگز میں Allow کریں۔",
+                                style = TextStyle(fontFamily = NotoNastaliqFamily, fontSize = 11.sp, color = Color(0xFFB91C1C), lineHeight = 17.sp)
+                            )
+                            Button(
+                                onClick = {
+                                    try {
+                                        val intent = Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                            putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                        }
+                                        context.startActivity(intent)
+                                    } catch (_: Exception) {
+                                        val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                            data = Uri.fromParts("package", context.packageName, null)
+                                        }
+                                        context.startActivity(intent)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626))
+                            ) {
+                                Text("فون سیٹنگز کھولیں اور آن کریں ⚙️", fontFamily = NotoNastaliqFamily, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
 
                 if (notifications.isEmpty()) {
                     // Clean Empty State
@@ -598,6 +661,32 @@ fun InAppNotificationDialog(
                                                 lineHeight = 19.sp
                                             )
                                         )
+                                        val timeStr = remember(item.timestamp) {
+                                            try {
+                                                val sdf = java.text.SimpleDateFormat("hh:mm a • dd MMM yyyy", java.util.Locale.ENGLISH)
+                                                sdf.format(java.util.Date(item.timestamp))
+                                            } catch (_: Exception) { "" }
+                                        }
+                                        if (timeStr.isNotBlank()) {
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.AccessTime,
+                                                    contentDescription = null,
+                                                    tint = Color(0xFF0D9488),
+                                                    modifier = Modifier.size(11.dp)
+                                                )
+                                                Text(
+                                                    text = timeStr,
+                                                    fontSize = 10.sp,
+                                                    color = Color(0xFF0D9488),
+                                                    fontWeight = FontWeight.Medium
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1251,6 +1340,64 @@ fun DownloadRewardedAdModal(
                 }
             }
         }
+    }
+}
+
+/**
+ * Unity Ads Banner View Composable for Dashboard impressions
+ */
+@Composable
+fun UnityBannerAd(
+    modifier: Modifier = Modifier,
+    placementId: String = com.example.util.UnityAdsManager.BANNER_PLACEMENT_ID
+) {
+    var isAdVisible by remember { mutableStateOf(true) }
+
+    if (!com.unity3d.ads.UnityAds.isInitialized || !isAdVisible) {
+        return
+    }
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(56.dp),
+        color = Color.Transparent
+    ) {
+        androidx.compose.ui.viewinterop.AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { ctx ->
+                val bannerView = com.unity3d.services.banners.BannerView(
+                    ctx,
+                    placementId,
+                    com.unity3d.services.banners.UnityBannerSize(320, 50)
+                )
+                bannerView.listener = object : com.unity3d.services.banners.BannerView.Listener() {
+                    override fun onBannerLoaded(bannerAdView: com.unity3d.services.banners.BannerView?) {
+                        android.util.Log.d("UnityAdsManager", "Banner loaded successfully: $placementId")
+                        isAdVisible = true
+                    }
+
+                    override fun onBannerFailedToLoad(
+                        bannerAdView: com.unity3d.services.banners.BannerView?,
+                        errorInfo: com.unity3d.services.banners.BannerErrorInfo?
+                    ) {
+                        android.util.Log.w("UnityAdsManager", "Banner failed to load: ${errorInfo?.errorMessage}")
+                        isAdVisible = false
+                    }
+                }
+                try {
+                    bannerView.load()
+                } catch (t: Throwable) {
+                    android.util.Log.w("UnityAdsManager", "Error calling bannerView.load()", t)
+                }
+                bannerView
+            },
+            onRelease = { bannerView ->
+                try {
+                    bannerView.destroy()
+                } catch (_: Throwable) {}
+            }
+        )
     }
 }
 

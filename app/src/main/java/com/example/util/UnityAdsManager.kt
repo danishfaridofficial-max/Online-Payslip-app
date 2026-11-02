@@ -49,6 +49,7 @@ object UnityAdsManager {
     const val GAME_ID = "800388050"
     const val REWARDED_PLACEMENT_ID = "Rewarded_Android"
     const val INTERSTITIAL_PLACEMENT_ID = "Interstitial_Android"
+    const val BANNER_PLACEMENT_ID = "Banner_Android"
     const val TEST_MODE = false
 
     // Priority candidate lists for fail-safe fill rates

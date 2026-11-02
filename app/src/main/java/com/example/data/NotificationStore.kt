@@ -28,6 +28,19 @@ object NotificationStore {
     private val _hasUnread = MutableStateFlow(false)
     val hasUnread: StateFlow<Boolean> = _hasUnread.asStateFlow()
 
+    private val _openDialogRequested = MutableStateFlow(false)
+    val openDialogRequested: StateFlow<Boolean> = _openDialogRequested.asStateFlow()
+
+    fun requestOpenDialog() {
+        _openDialogRequested.value = true
+    }
+
+    fun consumeOpenDialogRequest(): Boolean {
+        val req = _openDialogRequested.value
+        if (req) _openDialogRequested.value = false
+        return req
+    }
+
     private val _fcmToken = MutableStateFlow<String?>(null)
     val fcmToken: StateFlow<String?> = _fcmToken.asStateFlow()
 
@@ -68,8 +81,18 @@ object NotificationStore {
     }
 
     fun addNotification(context: Context, title: String, message: String) {
-        val prefs = getPrefs(context)
+        if (title.isBlank() && message.isBlank()) return
         val currentList = _notifications.value.toMutableList()
+
+        // Deduplicate if identical title and message arrived within 4 seconds
+        if (currentList.isNotEmpty()) {
+            val first = currentList[0]
+            if (first.title == title && first.message == message && (System.currentTimeMillis() - first.timestamp < 4000L)) {
+                return
+            }
+        }
+
+        val prefs = getPrefs(context)
         val newNotification = AppNotification(
             id = System.currentTimeMillis().toString(),
             title = title,
@@ -78,8 +101,8 @@ object NotificationStore {
             isRead = false
         )
         currentList.add(0, newNotification)
-        // Keep max 20 notifications
-        val trimmed = currentList.take(20)
+        // Keep up to 30 notifications
+        val trimmed = currentList.take(30)
 
         // Save to prefs
         val array = JSONArray()

@@ -46,10 +46,17 @@ fun PayslipPortalApp(viewModel: PayslipViewModel) {
     // Exit confirmation dialog state
     var showExitDialog by remember { mutableStateOf(false) }
     var showInAppNotificationDialog by remember { mutableStateOf(false) }
-    var showViewPayslipRewardedModal by remember { mutableStateOf(false) }
 
     val notifications by com.example.data.NotificationStore.notifications.collectAsStateWithLifecycle()
     val hasUnreadNotifications by com.example.data.NotificationStore.hasUnread.collectAsStateWithLifecycle()
+    val openDialogRequested by com.example.data.NotificationStore.openDialogRequested.collectAsStateWithLifecycle()
+
+    LaunchedEffect(openDialogRequested) {
+        if (openDialogRequested) {
+            showInAppNotificationDialog = true
+            com.example.data.NotificationStore.consumeOpenDialogRequest()
+        }
+    }
 
     // Remote Force Update state from Master Sheet (M2:O2)
     var updateConfig by remember { mutableStateOf(com.example.util.AppUpdateConfig()) }
@@ -63,7 +70,7 @@ fun PayslipPortalApp(viewModel: PayslipViewModel) {
     }
 
     // Intercept back button if no child popups/sheets are open
-    BackHandler(enabled = !state.showPayslipModal && !state.showWhatsappPopup && !updateConfig.isUpdateRequired && !showInAppNotificationDialog && !showViewPayslipRewardedModal) {
+    BackHandler(enabled = !state.showPayslipModal && !state.showWhatsappPopup && !updateConfig.isUpdateRequired && !showInAppNotificationDialog) {
         showExitDialog = true
     }
 
@@ -104,8 +111,10 @@ fun PayslipPortalApp(viewModel: PayslipViewModel) {
                     PortalHeader(
                         currentDate = state.currentDateFormatted,
                         hasUnreadNotifications = hasUnreadNotifications,
+                        unreadCount = notifications.count { !it.isRead },
                         onOpenNotificationsClick = {
                             (context as? com.example.MainActivity)?.requestNotificationPermission()
+                            com.example.data.NotificationStore.markAllAsRead(context)
                             showInAppNotificationDialog = true
                         },
                         onShareAppClick = {
@@ -190,12 +199,22 @@ fun PayslipPortalApp(viewModel: PayslipViewModel) {
                                 },
                                 onRefreshClick = viewModel::refreshPortal,
                                 onViewPayslipClick = {
-                                    showViewPayslipRewardedModal = true
+                                    viewModel.dismissWhatsappPopup()
+                                    viewModel.openPayslipModal()
                                 },
                                 onChangePasswordClick = viewModel::onOpenChangePasswordModal,
                                 onEditEmailClick = viewModel::onOpenEditEmailModal,
                                 onLogoutClick = viewModel::onHrmisLogout
                             )
+
+                            // Dashboard Banner Ad for High Impressions
+                            Spacer(modifier = Modifier.height(10.dp))
+                            UnityBannerAd(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 4.dp)
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
 
                             // 2. Payslip Month & District Search Form (Clean - No Personal Number needed)
                             SearchFormCard(
@@ -274,33 +293,6 @@ fun PayslipPortalApp(viewModel: PayslipViewModel) {
                         onEmailChange = viewModel::onEditEmailInputChanged,
                         onSubmit = viewModel::onSubmitEditEmail,
                         onDismiss = viewModel::onDismissEditEmailModal
-                    )
-                }
-
-                // Rewarded Video Confirmation Modal for Viewing Complete Payslip
-                if (showViewPayslipRewardedModal) {
-                    DownloadRewardedAdModal(
-                        title = "مکمل پے سلپ دیکھیں",
-                        message = "مکمل سیلری سلپ، الاؤنسز اور کٹوتیوں کی تفصیل دیکھنے کے لیے مختصر ویڈیو اشتہار دیکھیں۔\nWatch a quick ad to view your complete payslip.",
-                        buttonText = "ویڈیو دیکھیں اور پے سلپ دیکھیں",
-                        onWatchAdClick = {
-                            showViewPayslipRewardedModal = false
-                            com.example.util.UnityAdsManager.showRewardedForDownload(
-                                activity = activity,
-                                onRewardGranted = {
-                                    viewModel.dismissWhatsappPopup()
-                                    viewModel.openPayslipModal()
-                                },
-                                onRewardSkipped = {
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar("مکمل پے سلپ دیکھنے کے لیے پورا اشتہار دیکھنا ضروری ہے۔")
-                                    }
-                                }
-                            )
-                        },
-                        onDismiss = {
-                            showViewPayslipRewardedModal = false
-                        }
                     )
                 }
 

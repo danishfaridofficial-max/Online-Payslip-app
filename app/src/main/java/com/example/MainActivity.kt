@@ -74,22 +74,26 @@ class MainActivity : ComponentActivity() {
     if (intent == null) return
     val extras = intent.extras ?: return
 
-    val title = extras.getString("notification_title")
-      ?: extras.getString("title")
-      ?: extras.getString("gcm.notification.title")
-      ?: extras.getString("google.c.a.c_l")
+    var foundTitle: String? = null
+    var foundBody: String? = null
 
-    val body = extras.getString("notification_body")
-      ?: extras.getString("body")
-      ?: extras.getString("gcm.notification.body")
-      ?: extras.getString("message")
+    for (key in extras.keySet()) {
+      val value = extras.getString(key) ?: continue
+      val lower = key.lowercase()
+      if (foundTitle == null && (lower.contains("title") || lower.contains("header") || lower.contains("subject") || lower == "google.c.a.c_l")) {
+        foundTitle = value
+      } else if (foundBody == null && (lower.contains("body") || lower.contains("message") || lower.contains("text") || lower.contains("desc") || lower.contains("alert"))) {
+        foundBody = value
+      }
+    }
 
-    if (!title.isNullOrBlank() || !body.isNullOrBlank()) {
+    if (!foundTitle.isNullOrBlank() || !foundBody.isNullOrBlank()) {
       NotificationStore.addNotification(
         this,
-        title ?: "پے سلپ پورٹل اطلاع",
-        body ?: "آپ کے لیے نئی اپڈیٹ موجود ہے۔"
+        foundTitle ?: "پے سلپ پورٹل اطلاع",
+        foundBody ?: "آپ کے لیے نئی سرکاری اپڈیٹ موجود ہے۔"
       )
+      NotificationStore.requestOpenDialog()
     }
   }
 
