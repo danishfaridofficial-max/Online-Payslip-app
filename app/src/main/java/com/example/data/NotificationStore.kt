@@ -143,8 +143,45 @@ object NotificationStore {
         return _fcmToken.value ?: getPrefs(context).getString(KEY_FCM_TOKEN, null)
     }
 
+    fun ensureFirebaseInitialized(context: Context): com.google.firebase.FirebaseApp? {
+        return try {
+            val apps = com.google.firebase.FirebaseApp.getApps(context)
+            if (apps.isNotEmpty()) {
+                com.google.firebase.FirebaseApp.getInstance()
+            } else {
+                val auto = com.google.firebase.FirebaseApp.initializeApp(context)
+                auto ?: run {
+                    val options = com.google.firebase.FirebaseOptions.Builder()
+                        .setApplicationId("1:964621085853:android:7e752337f570980d62f874")
+                        .setApiKey("AIzaSyBPNkc-Beh7TE3AkrH3FW0vfJPfgGwDldU")
+                        .setGcmSenderId("964621085853")
+                        .setProjectId("online-paylisp")
+                        .setStorageBucket("online-paylisp.firebasestorage.app")
+                        .build()
+                    com.google.firebase.FirebaseApp.initializeApp(context.applicationContext, options)
+                }
+            }
+        } catch (e: Throwable) {
+            android.util.Log.e("NotificationStore", "ensureFirebaseInitialized auto failed, forcing options", e)
+            try {
+                val options = com.google.firebase.FirebaseOptions.Builder()
+                    .setApplicationId("1:964621085853:android:7e752337f570980d62f874")
+                    .setApiKey("AIzaSyBPNkc-Beh7TE3AkrH3FW0vfJPfgGwDldU")
+                    .setGcmSenderId("964621085853")
+                    .setProjectId("online-paylisp")
+                    .setStorageBucket("online-paylisp.firebasestorage.app")
+                    .build()
+                com.google.firebase.FirebaseApp.initializeApp(context.applicationContext, options)
+            } catch (e2: Throwable) {
+                android.util.Log.e("NotificationStore", "Fallback initializeApp failed", e2)
+                null
+            }
+        }
+    }
+
     fun fetchFcmToken(context: Context, onComplete: ((String?, String?) -> Unit)? = null) {
         try {
+            ensureFirebaseInitialized(context)
             com.google.firebase.messaging.FirebaseMessaging.getInstance().token
                 .addOnCompleteListener { task ->
                     if (task.isSuccessful && !task.result.isNullOrBlank()) {

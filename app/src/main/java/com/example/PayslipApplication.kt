@@ -21,7 +21,7 @@ class PayslipApplication : Application() {
 
         // 2. Initialize FirebaseApp explicitly & subscribe to FCM topics immediately
         try {
-            com.google.firebase.FirebaseApp.initializeApp(this)
+            com.example.data.NotificationStore.ensureFirebaseInitialized(this)
             PayslipFirebaseMessagingService.initializeSubscriptions(this)
         } catch (_: Throwable) {}
 

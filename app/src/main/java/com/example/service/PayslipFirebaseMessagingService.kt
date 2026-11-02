@@ -140,8 +140,11 @@ class PayslipFirebaseMessagingService : FirebaseMessagingService() {
             }
         }
 
-        fun subscribeAllTopics() {
+        fun subscribeAllTopics(context: Context? = null) {
             try {
+                if (context != null) {
+                    NotificationStore.ensureFirebaseInitialized(context)
+                }
                 val messaging = FirebaseMessaging.getInstance()
                 for (topic in TOPICS) {
                     messaging.subscribeToTopic(topic).addOnCompleteListener { task ->
@@ -157,16 +160,11 @@ class PayslipFirebaseMessagingService : FirebaseMessagingService() {
 
         fun initializeSubscriptions(context: Context) {
             createNotificationChannel(context)
-            subscribeAllTopics()
+            NotificationStore.ensureFirebaseInitialized(context)
+            subscribeAllTopics(context)
 
             try {
-                FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
-                    if (task.isSuccessful && !task.result.isNullOrBlank()) {
-                        val token = task.result
-                        Log.d(TAG, "Active FCM Token: $token")
-                        NotificationStore.saveFcmToken(context, token)
-                    }
-                }
+                NotificationStore.fetchFcmToken(context)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed getting FCM token", e)
             }
