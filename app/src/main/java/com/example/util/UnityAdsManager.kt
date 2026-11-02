@@ -13,6 +13,12 @@ import com.unity3d.ads.IUnityAdsShowListener
 import com.unity3d.ads.UnityAds
 import com.unity3d.ads.UnityAdsLoadOptions
 import com.unity3d.ads.UnityAdsShowOptions
+import com.unity3d.services.banners.BannerErrorInfo
+import com.unity3d.services.banners.BannerView
+import com.unity3d.services.banners.UnityBannerSize
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.util.UUID
 
 /**
@@ -66,6 +72,18 @@ object UnityAdsManager {
         "Interstitial",
         "video"
     )
+
+    val BANNER_CANDIDATES = listOf(
+        BANNER_PLACEMENT_ID,
+        "banner",
+        "Banner",
+        "banner_android",
+        "Banner_Android_KP",
+        "default_banner"
+    )
+
+    private val _isSdkInitialized = MutableStateFlow(false)
+    val isSdkInitialized: StateFlow<Boolean> = _isSdkInitialized.asStateFlow()
 
     // Rewarded Ad state
     @Volatile private var rewardedCandidateIndex = 0
@@ -163,6 +181,7 @@ object UnityAdsManager {
         mainHandler.post {
             try {
                 if (UnityAds.isInitialized) {
+                    _isSdkInitialized.value = true
                     preloadAllAds()
                     return@post
                 }
@@ -175,6 +194,7 @@ object UnityAdsManager {
                     object : IUnityAdsInitializationListener {
                         override fun onInitializationComplete() {
                             isInitializing = false
+                            _isSdkInitialized.value = true
                             Log.d(TAG, "Unity Ads initialized successfully for Game ID: $GAME_ID")
                             mainHandler.postDelayed({ preloadAllAds() }, 500L)
                         }
@@ -517,5 +537,59 @@ object UnityAdsManager {
             Log.w(TAG, "showInterstitialIfReady safely caught: ${t.message}")
             onComplete()
         }
+    }
+
+    /**
+     * Loads a Unity Banner Ad with fallback candidate placement traversal.
+     */
+    fun loadBanner(
+        activity: Activity,
+        onLoaded: (BannerView) -> Unit,
+        onFailed: (String) -> Unit
+    ) {
+        if (!UnityAds.isInitialized) {
+            onFailed("Unity Ads not initialized yet")
+            return
+        }
+
+        fun tryCandidate(index: Int) {
+            if (index >= BANNER_CANDIDATES.size) {
+                onFailed("All banner candidates exhausted")
+                return
+            }
+            val placement = BANNER_CANDIDATES[index]
+            Log.d(TAG, "Attempting banner load with placement: $placement (index $index)")
+            try {
+                val banner = BannerView(activity, placement, UnityBannerSize(320, 50))
+                banner.listener = object : BannerView.Listener() {
+                    override fun onBannerLoaded(bannerAdView: BannerView?) {
+                        Log.d(TAG, "✅ Unity Banner LOADED successfully for placement: $placement")
+                        if (bannerAdView != null) {
+                            onLoaded(bannerAdView)
+                        }
+                    }
+
+                    override fun onBannerFailedToLoad(
+                        bannerAdView: BannerView?,
+                        errorInfo: BannerErrorInfo?
+                    ) {
+                        val errMsg = errorInfo?.errorMessage ?: "error"
+                        Log.w(TAG, "Banner placement $placement failed: $errMsg. Trying next placement...")
+                        try {
+                            bannerAdView?.destroy()
+                        } catch (_: Throwable) {}
+                        mainHandler.postDelayed({
+                            tryCandidate(index + 1)
+                        }, 400L)
+                    }
+                }
+                banner.load()
+            } catch (t: Throwable) {
+                Log.w(TAG, "Exception loading banner for $placement: ${t.message}")
+                tryCandidate(index + 1)
+            }
+        }
+
+        tryCandidate(0)
     }
 }

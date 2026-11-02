@@ -1348,56 +1348,60 @@ fun DownloadRewardedAdModal(
  */
 @Composable
 fun UnityBannerAd(
-    modifier: Modifier = Modifier,
-    placementId: String = com.example.util.UnityAdsManager.BANNER_PLACEMENT_ID
+    modifier: Modifier = Modifier
 ) {
-    var isAdVisible by remember { mutableStateOf(true) }
+    val context = LocalContext.current
+    val isSdkInit by com.example.util.UnityAdsManager.isSdkInitialized.collectAsState()
+    val isUnityInit = isSdkInit || com.unity3d.ads.UnityAds.isInitialized
+    val activity = remember(context) { com.example.util.UnityAdsManager.findActivity(context) }
 
-    if (!com.unity3d.ads.UnityAds.isInitialized || !isAdVisible) {
-        return
+    var bannerView by remember { mutableStateOf<com.unity3d.services.banners.BannerView?>(null) }
+    var isLoaded by remember { mutableStateOf(false) }
+
+    DisposableEffect(isUnityInit, activity) {
+        if (isUnityInit && activity != null) {
+            com.example.util.UnityAdsManager.loadBanner(
+                activity = activity,
+                onLoaded = { view ->
+                    bannerView = view
+                    isLoaded = true
+                },
+                onFailed = { err ->
+                    android.util.Log.w("UnityBannerAd", "Banner load failed: $err")
+                }
+            )
+        }
+        onDispose {
+            try {
+                bannerView?.destroy()
+                bannerView = null
+            } catch (_: Throwable) {}
+        }
     }
 
-    Surface(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(56.dp),
-        color = Color.Transparent
-    ) {
-        androidx.compose.ui.viewinterop.AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = { ctx ->
-                val bannerView = com.unity3d.services.banners.BannerView(
-                    ctx,
-                    placementId,
-                    com.unity3d.services.banners.UnityBannerSize(320, 50)
+    if (isLoaded && bannerView != null) {
+        Box(
+            modifier = modifier
+                .fillMaxWidth()
+                .wrapContentHeight()
+                .padding(vertical = 4.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = Color.White,
+                shadowElevation = 2.dp,
+                border = BorderStroke(0.5.dp, Color(0xFFCBD5E1))
+            ) {
+                androidx.compose.ui.viewinterop.AndroidView(
+                    modifier = Modifier.size(width = 320.dp, height = 50.dp),
+                    factory = { _ ->
+                        (bannerView?.parent as? android.view.ViewGroup)?.removeView(bannerView)
+                        bannerView!!
+                    }
                 )
-                bannerView.listener = object : com.unity3d.services.banners.BannerView.Listener() {
-                    override fun onBannerLoaded(bannerAdView: com.unity3d.services.banners.BannerView?) {
-                        android.util.Log.d("UnityAdsManager", "Banner loaded successfully: $placementId")
-                        isAdVisible = true
-                    }
-
-                    override fun onBannerFailedToLoad(
-                        bannerAdView: com.unity3d.services.banners.BannerView?,
-                        errorInfo: com.unity3d.services.banners.BannerErrorInfo?
-                    ) {
-                        android.util.Log.w("UnityAdsManager", "Banner failed to load: ${errorInfo?.errorMessage}")
-                        isAdVisible = false
-                    }
-                }
-                try {
-                    bannerView.load()
-                } catch (t: Throwable) {
-                    android.util.Log.w("UnityAdsManager", "Error calling bannerView.load()", t)
-                }
-                bannerView
-            },
-            onRelease = { bannerView ->
-                try {
-                    bannerView.destroy()
-                } catch (_: Throwable) {}
             }
-        )
+        }
     }
 }
 
