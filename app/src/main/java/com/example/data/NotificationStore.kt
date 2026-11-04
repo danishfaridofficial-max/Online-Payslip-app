@@ -203,6 +203,13 @@ object NotificationStore {
     }
 
     fun fetchFcmToken(context: Context, onComplete: ((String?, String?) -> Unit)? = null) {
+        val cached = getSavedFcmToken(context)
+        if (!cached.isNullOrBlank()) {
+            _fcmToken.value = cached
+            onComplete?.invoke(cached, null)
+            return
+        }
+
         try {
             ensureFirebaseInitialized(context)
             com.google.firebase.messaging.FirebaseMessaging.getInstance().token
@@ -213,13 +220,13 @@ object NotificationStore {
                         onComplete?.invoke(token, null)
                     } else {
                         val err = task.exception?.localizedMessage ?: "ٹوکن موصول نہیں ہوا"
-                        android.util.Log.e("NotificationStore", "Failed to retrieve FCM token: $err", task.exception)
+                        android.util.Log.w("NotificationStore", "FCM token not available: $err")
                         onComplete?.invoke(null, err)
                     }
                 }
         } catch (e: Throwable) {
             val err = e.localizedMessage ?: "Firebase error"
-            android.util.Log.e("NotificationStore", "Exception getting FCM token: $err", e)
+            android.util.Log.w("NotificationStore", "Exception checking FCM token: $err")
             onComplete?.invoke(null, err)
         }
     }

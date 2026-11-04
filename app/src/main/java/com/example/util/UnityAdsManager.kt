@@ -53,32 +53,33 @@ object UnityAdsManager {
     // 1. Unity Ads Configuration Placeholders (Easily updateable)
     // =========================================================================
     const val GAME_ID = "800388050"
-    const val REWARDED_PLACEMENT_ID = "Rewarded_Android"
-    const val INTERSTITIAL_PLACEMENT_ID = "Interstitial_Android"
-    const val BANNER_PLACEMENT_ID = "Banner_Android"
+    const val REWARDED_PLACEMENT_ID = "rewardedVideo"
+    const val INTERSTITIAL_PLACEMENT_ID = "video"
+    const val BANNER_PLACEMENT_ID = "banner"
     const val TEST_MODE = false
 
     // Priority candidate lists for fail-safe fill rates
     private val REWARDED_CANDIDATES = listOf(
-        REWARDED_PLACEMENT_ID,
-        "BP_Rewarded_Android",
         "rewardedVideo",
-        "Rewarded"
+        "Rewarded_Android",
+        "rewarded",
+        "Rewarded",
+        "BP_Rewarded_Android"
     )
 
     private val INTERSTITIAL_CANDIDATES = listOf(
-        INTERSTITIAL_PLACEMENT_ID,
-        "BP_Interstitial_Android",
+        "video",
+        "Interstitial_Android",
+        "interstitial",
         "Interstitial",
-        "video"
+        "BP_Interstitial_Android"
     )
 
     val BANNER_CANDIDATES = listOf(
-        BANNER_PLACEMENT_ID,
         "banner",
+        "Banner_Android",
         "Banner",
         "banner_android",
-        "Banner_Android_KP",
         "default_banner"
     )
 
