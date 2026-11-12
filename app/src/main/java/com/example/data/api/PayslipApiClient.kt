@@ -131,13 +131,66 @@ object PayslipApiClient {
                 .build()
 
             okHttpClient.newCall(request).execute().use { response ->
-                val body = response.body?.string() ?: ""
+                val body = response.body?.string()?.trim() ?: ""
+                if (!response.isSuccessful || body.startsWith("<!DOCTYPE", ignoreCase = true) || body.startsWith("<html", ignoreCase = true)) {
+                    return@withContext PayslipResponse(success = false, message = "سرور سے درست جواب موصول نہیں ہوا۔ براہ کرم کچھ دیر بعد کوشش کریں۔")
+                }
                 val adapter = moshi.adapter(PayslipResponse::class.java)
-                val res = adapter.fromJson(body)
+                val res = try { adapter.fromJson(body) } catch (_: Exception) { null }
                 res ?: PayslipResponse(success = false, message = "سرور سے جواب موصول نہیں ہوا۔")
             }
         } catch (e: Exception) {
             PayslipResponse(success = false, message = e.localizedMessage ?: "کنکشن کی خرابی")
+        }
+    }
+
+    val sharedHttpClient: OkHttpClient get() = okHttpClient
+
+    /**
+     * Executes sensitive credential operations via POST body to avoid leaking CNIC/passwords in URLs.
+     * Automatically falls back to GET if the deployed Google Apps Script does not have doPost(e) yet.
+     */
+    private fun executeSecurePostWithFallback(
+        webAppUrl: String,
+        formFields: Map<String, String>
+    ): String {
+        // 1. Primary Attempt: Send sensitive credentials in HTTP POST body (Zero URL leakage)
+        try {
+            val formBuilder = okhttp3.FormBody.Builder()
+            formFields.forEach { (key, value) ->
+                formBuilder.add(key, value)
+            }
+            val postRequest = Request.Builder()
+                .url(webAppUrl)
+                .post(formBuilder.build())
+                .header("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:109.0) Gecko/111.0 Firefox/111.0")
+                .header("Accept", "application/json, text/plain, */*")
+                .build()
+
+            okHttpClient.newCall(postRequest).execute().use { response ->
+                val body = response.body?.string()?.trim() ?: ""
+                val isHtmlError = body.contains("Script function not found", ignoreCase = true) ||
+                        body.startsWith("<!DOCTYPE", ignoreCase = true) ||
+                        body.startsWith("<html", ignoreCase = true)
+                if (response.isSuccessful && !isHtmlError && body.isNotBlank()) {
+                    return body
+                }
+            }
+        } catch (_: Exception) {}
+
+        // 2. Safe Fallback to GET for backwards compatibility until Apps Script doPost is published
+        val queryParams = formFields.entries.joinToString("&") { (k, v) ->
+            "${URLEncoder.encode(k, "UTF-8")}=${URLEncoder.encode(v, "UTF-8")}"
+        }
+        val getUrl = if (webAppUrl.contains("?")) "$webAppUrl&$queryParams" else "$webAppUrl?$queryParams"
+        val getRequest = Request.Builder()
+            .url(getUrl)
+            .header("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:109.0) Gecko/111.0 Firefox/111.0")
+            .header("Accept", "application/json, text/plain, */*")
+            .build()
+
+        return okHttpClient.newCall(getRequest).execute().use { response ->
+            response.body?.string()?.trim() ?: ""
         }
     }
 
@@ -148,19 +201,18 @@ object PayslipApiClient {
     ): PasswordResponse = withContext(Dispatchers.IO) {
         try {
             val cleanCnic = cnic.replace(Regex("[^0-9]"), "").trim()
-            val encodedCnic = URLEncoder.encode(cleanCnic, "UTF-8")
-            val encodedPass = URLEncoder.encode(password.trim(), "UTF-8")
-            val url = "$webAppUrl?action=verifyPassword&cnic=$encodedCnic&password=$encodedPass"
-            val request = Request.Builder()
-                .url(url)
-                .header("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:109.0) Gecko/111.0 Firefox/111.0")
-                .build()
-
-            okHttpClient.newCall(request).execute().use { response ->
-                val body = response.body?.string() ?: ""
-                val adapter = moshi.adapter(PasswordResponse::class.java)
-                adapter.fromJson(body) ?: PasswordResponse(success = false, message = "سرور سے تصدیق موصول نہیں ہوئی۔")
+            val fields = mapOf(
+                "action" to "verifyPassword",
+                "cnic" to cleanCnic,
+                "password" to password.trim()
+            )
+            val body = executeSecurePostWithFallback(webAppUrl, fields)
+            if (body.isBlank() || body.startsWith("<!DOCTYPE", ignoreCase = true) || body.startsWith("<html", ignoreCase = true)) {
+                return@withContext PasswordResponse(success = false, message = "سرور سے جواب موصول نہیں ہوا۔ براہ کرم انٹرنیٹ چیک کریں۔")
             }
+            val adapter = moshi.adapter(PasswordResponse::class.java)
+            val parsed = try { adapter.fromJson(body) } catch (_: Exception) { null }
+            parsed ?: PasswordResponse(success = false, message = "سرور سے تصدیق موصول نہیں ہوئی۔")
         } catch (e: Exception) {
             PasswordResponse(success = false, error = e.localizedMessage)
         }
@@ -175,21 +227,20 @@ object PayslipApiClient {
     ): PasswordResponse = withContext(Dispatchers.IO) {
         try {
             val cleanCnic = cnic.replace(Regex("[^0-9]"), "").trim()
-            val encodedCnic = URLEncoder.encode(cleanCnic, "UTF-8")
-            val encodedPass = URLEncoder.encode(password.trim(), "UTF-8")
-            val encodedEmail = URLEncoder.encode(email.trim(), "UTF-8")
-            val encodedDateTime = URLEncoder.encode(dateTime.trim(), "UTF-8")
-            val url = "$webAppUrl?action=savePassword&cnic=$encodedCnic&password=$encodedPass&email=$encodedEmail&dateTime=$encodedDateTime"
-            val request = Request.Builder()
-                .url(url)
-                .header("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:109.0) Gecko/111.0 Firefox/111.0")
-                .build()
-
-            okHttpClient.newCall(request).execute().use { response ->
-                val body = response.body?.string() ?: ""
-                val adapter = moshi.adapter(PasswordResponse::class.java)
-                adapter.fromJson(body) ?: PasswordResponse(success = false, message = "سرور پر محفوظ نہیں ہو سکا۔")
+            val fields = mapOf(
+                "action" to "savePassword",
+                "cnic" to cleanCnic,
+                "password" to password.trim(),
+                "email" to email.trim(),
+                "dateTime" to dateTime.trim()
+            )
+            val body = executeSecurePostWithFallback(webAppUrl, fields)
+            if (body.isBlank() || body.startsWith("<!DOCTYPE", ignoreCase = true) || body.startsWith("<html", ignoreCase = true)) {
+                return@withContext PasswordResponse(success = false, message = "سرور پر محفوظ نہیں ہو سکا۔")
             }
+            val adapter = moshi.adapter(PasswordResponse::class.java)
+            val parsed = try { adapter.fromJson(body) } catch (_: Exception) { null }
+            parsed ?: PasswordResponse(success = false, message = "سرور پر محفوظ نہیں ہو سکا۔")
         } catch (e: Exception) {
             PasswordResponse(success = false, error = e.localizedMessage)
         }
@@ -203,20 +254,19 @@ object PayslipApiClient {
     ): PasswordResponse = withContext(Dispatchers.IO) {
         try {
             val cleanCnic = cnic.replace(Regex("[^0-9]"), "").trim()
-            val encodedCnic = URLEncoder.encode(cleanCnic, "UTF-8")
-            val encodedEmail = URLEncoder.encode(email.trim(), "UTF-8")
-            val encodedDateTime = URLEncoder.encode(dateTime.trim(), "UTF-8")
-            val url = "$webAppUrl?action=saveRecoveryEmail&cnic=$encodedCnic&email=$encodedEmail&dateTime=$encodedDateTime"
-            val request = Request.Builder()
-                .url(url)
-                .header("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:109.0) Gecko/111.0 Firefox/111.0")
-                .build()
-
-            okHttpClient.newCall(request).execute().use { response ->
-                val body = response.body?.string() ?: ""
-                val adapter = moshi.adapter(PasswordResponse::class.java)
-                adapter.fromJson(body) ?: PasswordResponse(success = false, message = "سرور پر محفوظ نہیں ہو سکا۔")
+            val fields = mapOf(
+                "action" to "saveRecoveryEmail",
+                "cnic" to cleanCnic,
+                "email" to email.trim(),
+                "dateTime" to dateTime.trim()
+            )
+            val body = executeSecurePostWithFallback(webAppUrl, fields)
+            if (body.isBlank() || body.startsWith("<!DOCTYPE", ignoreCase = true) || body.startsWith("<html", ignoreCase = true)) {
+                return@withContext PasswordResponse(success = false, message = "سرور پر محفوظ نہیں ہو سکا۔")
             }
+            val adapter = moshi.adapter(PasswordResponse::class.java)
+            val parsed = try { adapter.fromJson(body) } catch (_: Exception) { null }
+            parsed ?: PasswordResponse(success = false, message = "سرور پر محفوظ نہیں ہو سکا۔")
         } catch (e: Exception) {
             PasswordResponse(success = false, error = e.localizedMessage)
         }

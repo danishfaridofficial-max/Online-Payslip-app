@@ -52,6 +52,8 @@ data class PayslipUiState(
     val showEditEmailModal: Boolean = false,
     val editEmailInput: String = "",
     val isLoading: Boolean = false,
+    val isPullRefreshing: Boolean = false,
+    val isMonthSwitching: Boolean = false,
     val loadingMessage: String = "براہ کرم انتظار کریں...",
     val toastMessage: String? = null,
     val toastType: String = "info", // info, success, error, warning
@@ -244,6 +246,11 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
         )
     }
 
+    fun clearSavedCredentials() {
+        repository.saveCredentials("", "", false)
+        _uiState.update { it.copy(searchQuery = "", personalNumberQuery = "", rememberCredentials = false) }
+    }
+
     fun refreshPortal() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, loadingMessage = "تازہ ترین ڈیٹا گوگل شیٹ سے لائیو حاصل کیا جا رہا ہے...") }
@@ -360,6 +367,13 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
                 )
 
                 if (result.success && result.data != null) {
+                    val returnedCnic = result.data.cnic.replace(Regex("[^0-9]"), "").trim()
+                    if (state.isHrmisLoggedIn && returnedCnic.isNotEmpty() && returnedCnic != cleanQuery) {
+                        _uiState.update { it.copy(isLoading = false) }
+                        showToast("سیکیورٹی الرٹ: موصول شدہ پے سلپ آپ کے شناختی کارڈ سے میچ نہیں ہوئی۔", "error")
+                        return@launch
+                    }
+
                     if (state.rememberCredentials) {
                         repository.saveCredentials(cleanQuery, "", true)
                     }
@@ -424,6 +438,13 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
                 )
 
                 if (result.success && result.data != null) {
+                    val returnedCnic = result.data.cnic.replace(Regex("[^0-9]"), "").trim()
+                    if (returnedCnic.isNotEmpty() && returnedCnic != cleanQuery) {
+                        _uiState.update { it.copy(isLoading = false) }
+                        showToast("سیکیورٹی الرٹ: موصول شدہ پے سلپ آپ کے شناختی کارڈ سے میچ نہیں ہوئی۔", "error")
+                        return@launch
+                    }
+
                     val updatedMonth = result.month?.ifBlank { month } ?: month
                     val updatedYear = result.year?.ifBlank { state.selectedYear } ?: state.selectedYear
 
@@ -536,7 +557,7 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
                 val isPassValid = repository.verifyPasswordOnline(cleanCnic, enteredPass)
                 if (!isPassValid) {
                     _uiState.update { it.copy(isLoading = false) }
-                    showToast("❌ پاس ورڈ درست نہیں ہے۔ (اگر پہلی بار لاگ ان کر رہے ہیں تو پاس ورڈ آپ کا شناختی کارڈ نمبر ہے)", "error")
+                    showToast("❌ پاس ورڈ درست نہیں ہے یا انٹرنیٹ منقطع ہے۔ (پہلی بار لاگ ان کے لیے انٹرنیٹ ضروری ہے)", "error")
                     return@launch
                 }
 
@@ -840,7 +861,7 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
 
                     if (result.success && result.data != null) {
                         val serverPn = result.data.personnelNo.replace(Regex("[^0-9]"), "").trim()
-                        val isMatch = serverPn.isEmpty() || serverPn == cleanPn || serverPn.trimStart('0') == cleanPn.trimStart('0')
+                        val isMatch = serverPn.isNotEmpty() && (serverPn == cleanPn || serverPn.trimStart('0') == cleanPn.trimStart('0'))
                         if (isMatch) {
                             _uiState.update { it.copy(forgotStep = "new_password") }
                         } else {
@@ -940,10 +961,9 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
         val cnic = state.loggedInEmployee?.cnic?.replace(Regex("[^0-9]"), "") ?: ""
         if (cnic.isBlank()) return
 
-        val currentPass = repository.getAccountPassword(cnic)
         val enteredCurrent = state.changeCurrentPassInput.trim()
-        if (enteredCurrent.isNotBlank() && enteredCurrent != currentPass && enteredCurrent != cnic) {
-            showToast("موجودہ پاس ورڈ درست نہیں ہے!", "error")
+        if (enteredCurrent.isBlank()) {
+            showToast("براہ کرم موجودہ پاس ورڈ درج کریں!", "warning")
             return
         }
 
@@ -953,8 +973,16 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
             return
         }
 
-        _uiState.update { it.copy(isLoading = true, loadingMessage = "نیا پاس ورڈ گوگل شیٹ میں محفوظ کیا جا رہا ہے...") }
+        _uiState.update { it.copy(isLoading = true, loadingMessage = "موجودہ پاس ورڈ کی تصدیق کی جا رہی ہے...") }
         viewModelScope.launch {
+            val isCurrentValid = repository.verifyPasswordOnline(cnic, enteredCurrent)
+            if (!isCurrentValid) {
+                _uiState.update { it.copy(isLoading = false) }
+                showToast("موجودہ پاس ورڈ درست نہیں ہے!", "error")
+                return@launch
+            }
+
+            _uiState.update { it.copy(loadingMessage = "نیا پاس ورڈ گوگل شیٹ میں محفوظ کیا جا رہا ہے...") }
             repository.savePasswordOnline(cnic, newPass)
             _uiState.update {
                 it.copy(

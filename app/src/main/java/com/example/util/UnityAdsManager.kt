@@ -39,9 +39,13 @@ fun Context.findActivity(): Activity? {
 
 /**
  * Robust Unity Ads Manager featuring:
- * 1. Preloading & Auto-Reload for High-Converting Rewarded Video on PDF Download.
- * 2. Dedicated fallback to Interstitial and instant graceful pass-through (No Fill never blocks user).
- * 3. Background crash shielding for rock-solid stability.
+ * 1. Placement Candidate Fallback: Automatically tests standard Android placements
+ *    (e.g. "Rewarded_Android", "rewardedVideo") so placement naming differences in Unity Dashboard work seamlessly.
+ * 2. Intelligent Circuit Breakers: Permanently stops loading requests if placements are not configured
+ *    on the Unity Dashboard, eliminating `E/UnityAds: placement not found` logcat errors.
+ * 3. Zero-Friction User Experience: Instant graceful pass-through on PDF downloads so employees
+ *    are NEVER blocked from getting their salary statements.
+ * 4. Background crash shielding for rock-solid stability across diverse Android devices.
  */
 object UnityAdsManager {
     private const val TAG = "UnityAdsManager"
@@ -50,62 +54,113 @@ object UnityAdsManager {
     fun findActivity(context: Context): Activity? = context.findActivity()
 
     // =========================================================================
-    // 1. Unity Ads Configuration Placeholders (Easily updateable)
+    // 1. Unity Ads Configuration & Candidate Placements
     // =========================================================================
-    const val GAME_ID = "800388050"
-    const val REWARDED_PLACEMENT_ID = "rewardedVideo"
-    const val INTERSTITIAL_PLACEMENT_ID = "video"
-    const val BANNER_PLACEMENT_ID = "banner"
-    const val TEST_MODE = false
+    const val DEFAULT_GAME_ID = "800388050"
+    const val DEFAULT_REWARDED_PLACEMENT = "BP_Rewarded_Android"
+    const val DEFAULT_INTERSTITIAL_PLACEMENT = "BP_Interstitial_Android"
+    const val DEFAULT_BANNER_PLACEMENT = "BP_Banner_Android"
 
-    // Priority candidate lists for fail-safe fill rates
-    private val REWARDED_CANDIDATES = listOf(
-        "rewardedVideo",
+    @Volatile private var configuredGameId: String? = null
+    val GAME_ID: String get() = configuredGameId ?: DEFAULT_GAME_ID
+
+    val TEST_MODE: Boolean get() = com.example.BuildConfig.DEBUG
+
+    // Priority placement candidates: Exact Unity Dashboard Placement IDs first, fallbacks second
+    val REWARDED_CANDIDATES = listOf(
+        "BP_Rewarded_Android",
         "Rewarded_Android",
-        "rewarded",
-        "Rewarded",
-        "BP_Rewarded_Android"
+        "rewardedVideo",
+        "Rewarded"
     )
 
-    private val INTERSTITIAL_CANDIDATES = listOf(
-        "video",
+    val INTERSTITIAL_CANDIDATES = listOf(
+        "BP_Interstitial_Android",
         "Interstitial_Android",
-        "interstitial",
-        "Interstitial",
-        "BP_Interstitial_Android"
+        "video",
+        "Interstitial"
     )
 
     val BANNER_CANDIDATES = listOf(
-        "banner",
+        "BP_Banner_Android",
         "Banner_Android",
-        "Banner",
-        "banner_android",
-        "default_banner"
+        "banner",
+        "Banner"
     )
 
     private val _isSdkInitialized = MutableStateFlow(false)
     val isSdkInitialized: StateFlow<Boolean> = _isSdkInitialized.asStateFlow()
 
-    // Rewarded Ad state
+    // Circuit Breakers & Rewarded Ad state
+    @Volatile var isRewardedSupported: Boolean = true
+        private set
     @Volatile private var rewardedCandidateIndex = 0
-    @Volatile private var activeRewardedPlacement: String = REWARDED_CANDIDATES[0]
+    @Volatile var activeRewardedPlacement: String = REWARDED_CANDIDATES[0]
+        private set
     @Volatile private var rewardedObjectId: String = ""
     @Volatile var isRewardedLoaded: Boolean = false
         private set
     @Volatile private var isLoadingRewarded: Boolean = false
 
-    // Interstitial Ad state
+    // Circuit Breakers & Interstitial Ad state
+    @Volatile var isInterstitialSupported: Boolean = true
+        private set
     @Volatile private var interstitialCandidateIndex = 0
-    @Volatile private var activeInterstitialPlacement: String = INTERSTITIAL_CANDIDATES[0]
+    @Volatile var activeInterstitialPlacement: String = INTERSTITIAL_CANDIDATES[0]
+        private set
     @Volatile private var interstitialObjectId: String = ""
     @Volatile var isInterstitialLoaded: Boolean = false
         private set
     @Volatile private var isLoadingInterstitial: Boolean = false
 
+    // Circuit Breakers & Banner Ad state
+    @Volatile var isBannerSupported: Boolean = true
+        private set
+    @Volatile private var bannerCandidateIndex = 0
+    @Volatile var activeBannerPlacement: String = BANNER_CANDIDATES[0]
+        private set
+
     @Volatile private var isInitializing = false
     @Volatile private var crashShieldInstalled = false
     private var searchCount = 0
     private var currentTestMode = TEST_MODE
+
+    /**
+     * Programmatically configure or update Unity Ads credentials if provided by the user.
+     * Automatically resets circuit breakers to retry loading with the new credentials.
+     */
+    fun configure(
+        gameId: String? = null,
+        rewardedPlacement: String? = null,
+        interstitialPlacement: String? = null,
+        bannerPlacement: String? = null,
+        context: Context? = null
+    ) {
+        if (!gameId.isNullOrBlank()) {
+            configuredGameId = gameId.trim()
+        }
+        if (!rewardedPlacement.isNullOrBlank()) {
+            activeRewardedPlacement = rewardedPlacement.trim()
+        }
+        if (!interstitialPlacement.isNullOrBlank()) {
+            activeInterstitialPlacement = interstitialPlacement.trim()
+        }
+        if (!bannerPlacement.isNullOrBlank()) {
+            activeBannerPlacement = bannerPlacement.trim()
+        }
+
+        // Reset circuit breakers to allow trying new configuration
+        isRewardedSupported = true
+        isInterstitialSupported = true
+        isBannerSupported = true
+        rewardedCandidateIndex = 0
+        interstitialCandidateIndex = 0
+        bannerCandidateIndex = 0
+
+        if (context != null) {
+            initialize(context, currentTestMode)
+        }
+    }
 
     /**
      * Installs a global UncaughtExceptionHandler so that background SDK threads
@@ -163,16 +218,52 @@ object UnityAdsManager {
     }
 
     /**
+     * Checks if running on an Android emulator to avoid loading ads in tests.
+     */
+    fun isEmulator(): Boolean {
+        return try {
+            val buildFingerprint = android.os.Build.FINGERPRINT ?: ""
+            val buildModel = android.os.Build.MODEL ?: ""
+            val buildBrand = android.os.Build.BRAND ?: ""
+            val buildDevice = android.os.Build.DEVICE ?: ""
+            val buildProduct = android.os.Build.PRODUCT ?: ""
+            val buildHardware = android.os.Build.HARDWARE ?: ""
+            buildFingerprint.startsWith("generic") ||
+                    buildFingerprint.startsWith("unknown") ||
+                    buildModel.contains("google_sdk", ignoreCase = true) ||
+                    buildModel.contains("Emulator", ignoreCase = true) ||
+                    buildModel.contains("Android SDK built for x86", ignoreCase = true) ||
+                    buildHardware.contains("goldfish", ignoreCase = true) ||
+                    buildHardware.contains("ranchu", ignoreCase = true) ||
+                    buildBrand.startsWith("generic") && buildDevice.startsWith("generic") ||
+                    "google_sdk" == buildProduct
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
      * Initializes Unity Ads SDK and preloads Rewarded and Interstitial ads.
-     * Skips initialization on low-RAM devices to avoid WebView OOM crashes.
+     * Skips initialization on low-RAM devices or emulators to avoid WebView OOM / AdServices binding errors.
      */
     fun initialize(context: Context, testMode: Boolean = TEST_MODE) {
         installBackgroundCrashShield(context)
         val appContext = context.applicationContext ?: return
 
+        // Skip Unity Ads in emulator environment to prevent AdServices MEASUREMENT_SERVICE binding errors
+        if (isEmulator()) {
+            Log.i(TAG, "Emulator environment detected. Skipping Unity Ads initialization to preserve stability.")
+            return
+        }
+
         // Skip Unity Ads on low-RAM devices to protect stability and prevent OS kill
         if (isLowRamDevice(appContext)) {
-            Log.i(TAG, "Low RAM device detected (ActivityManager.isLowRamDevice = true). Skipping Unity Ads initialization to preserve memory.")
+            Log.i(TAG, "Low RAM device detected. Skipping Unity Ads initialization to preserve memory.")
+            return
+        }
+
+        if (GAME_ID.isBlank()) {
+            Log.i(TAG, "Unity Ads Game ID is empty; skipping ad initialization.")
             return
         }
 
@@ -217,21 +308,26 @@ object UnityAdsManager {
     }
 
     /**
-     * Preloads both Rewarded and Interstitial ads in the background.
+     * Preloads both Rewarded and Interstitial ads if supported on current dashboard.
      */
     fun preloadAllAds() {
-        loadRewardedAd()
-        loadInterstitialAd()
+        if (isRewardedSupported && !isLoadingRewarded && !isRewardedLoaded) {
+            loadRewardedAd()
+        }
+        if (isInterstitialSupported && !isLoadingInterstitial && !isInterstitialLoaded) {
+            loadInterstitialAd()
+        }
     }
 
     // =========================================================================
-    // 2. Rewarded Video Loading & Auto-Reload
+    // 2. Rewarded Video Loading with Candidate Cycling & Circuit Breaker
     // =========================================================================
     fun loadRewardedAd() {
         try {
-            if (!UnityAds.isInitialized || isLoadingRewarded || isRewardedLoaded) return
+            if (!UnityAds.isInitialized || !isRewardedSupported || isLoadingRewarded || isRewardedLoaded) return
             if (rewardedCandidateIndex >= REWARDED_CANDIDATES.size) {
-                rewardedCandidateIndex = 0
+                isRewardedSupported = false
+                Log.i(TAG, "All rewarded ad placement candidates exhausted on Unity Dashboard. Pausing further rewarded requests.")
                 return
             }
 
@@ -244,6 +340,7 @@ object UnityAdsManager {
                 setObjectId(objectId)
             }
 
+            Log.d(TAG, "Attempting load for Rewarded candidate: $placement (index $rewardedCandidateIndex)")
             UnityAds.load(
                 placement,
                 loadOptions,
@@ -251,6 +348,7 @@ object UnityAdsManager {
                     override fun onUnityAdsAdLoaded(placementId: String?) {
                         isLoadingRewarded = false
                         isRewardedLoaded = true
+                        isRewardedSupported = true
                         activeRewardedPlacement = placementId ?: placement
                         Log.d(TAG, "Rewarded Ad LOADED successfully: $activeRewardedPlacement")
                     }
@@ -262,11 +360,16 @@ object UnityAdsManager {
                     ) {
                         isLoadingRewarded = false
                         isRewardedLoaded = false
-                        Log.w(TAG, "Failed to load Rewarded Ad $placementId: $error - $message")
+                        Log.i(TAG, "Rewarded candidate $placementId not available ($error): $message")
 
-                        if (rewardedCandidateIndex + 1 < REWARDED_CANDIDATES.size) {
-                            rewardedCandidateIndex++
-                            mainHandler.postDelayed({ loadRewardedAd() }, 400L)
+                        // Try next candidate placement name
+                        rewardedCandidateIndex++
+                        if (rewardedCandidateIndex < REWARDED_CANDIDATES.size) {
+                            mainHandler.postDelayed({ loadRewardedAd() }, 300L)
+                        } else {
+                            // Trip circuit breaker: all placements exhausted for current Game ID
+                            isRewardedSupported = false
+                            Log.i(TAG, "Rewarded placements not configured on Unity Dashboard for Game ID $GAME_ID. Pausing requests.")
                         }
                     }
                 }
@@ -279,13 +382,14 @@ object UnityAdsManager {
     }
 
     // =========================================================================
-    // 3. Interstitial Loading & Auto-Reload
+    // 3. Interstitial Loading with Candidate Cycling & Circuit Breaker
     // =========================================================================
     fun loadInterstitialAd() {
         try {
-            if (!UnityAds.isInitialized || isLoadingInterstitial || isInterstitialLoaded) return
+            if (!UnityAds.isInitialized || !isInterstitialSupported || isLoadingInterstitial || isInterstitialLoaded) return
             if (interstitialCandidateIndex >= INTERSTITIAL_CANDIDATES.size) {
-                interstitialCandidateIndex = 0
+                isInterstitialSupported = false
+                Log.i(TAG, "All interstitial ad placement candidates exhausted on Unity Dashboard. Pausing further interstitial requests.")
                 return
             }
 
@@ -298,6 +402,7 @@ object UnityAdsManager {
                 setObjectId(objectId)
             }
 
+            Log.d(TAG, "Attempting load for Interstitial candidate: $placement (index $interstitialCandidateIndex)")
             UnityAds.load(
                 placement,
                 loadOptions,
@@ -305,6 +410,7 @@ object UnityAdsManager {
                     override fun onUnityAdsAdLoaded(placementId: String?) {
                         isLoadingInterstitial = false
                         isInterstitialLoaded = true
+                        isInterstitialSupported = true
                         activeInterstitialPlacement = placementId ?: placement
                         Log.d(TAG, "Interstitial Ad LOADED successfully: $activeInterstitialPlacement")
                     }
@@ -316,11 +422,16 @@ object UnityAdsManager {
                     ) {
                         isLoadingInterstitial = false
                         isInterstitialLoaded = false
-                        Log.w(TAG, "Failed to load Interstitial Ad $placementId: $error - $message")
+                        Log.i(TAG, "Interstitial candidate $placementId not available ($error): $message")
 
-                        if (interstitialCandidateIndex + 1 < INTERSTITIAL_CANDIDATES.size) {
-                            interstitialCandidateIndex++
-                            mainHandler.postDelayed({ loadInterstitialAd() }, 400L)
+                        // Try next candidate placement name
+                        interstitialCandidateIndex++
+                        if (interstitialCandidateIndex < INTERSTITIAL_CANDIDATES.size) {
+                            mainHandler.postDelayed({ loadInterstitialAd() }, 300L)
+                        } else {
+                            // Trip circuit breaker
+                            isInterstitialSupported = false
+                            Log.i(TAG, "Interstitial placements not configured on Unity Dashboard for Game ID $GAME_ID. Pausing requests.")
                         }
                     }
                 }
@@ -342,7 +453,8 @@ object UnityAdsManager {
      *   - If user skips video (SKIPPED): triggers onRewardSkipped() and reloads next ad.
      * - If Rewarded Ad is NOT loaded (Smart Fallback):
      *   - Tries Interstitial Ad (if loaded).
-     *   - If no ad is available (No Fill / Offline): immediately calls onRewardGranted() so user is NEVER blocked!
+     *   - If no ad is available (Dashboard not configured / Offline / No Fill):
+     *     immediately calls onRewardGranted() so the employee is NEVER blocked!
      */
     fun showRewardedForDownload(
         activity: Activity?,
@@ -358,6 +470,12 @@ object UnityAdsManager {
             if (!UnityAds.isInitialized) {
                 initialize(activity, currentTestMode)
                 onRewardGranted() // Fallback: never block download
+                return
+            }
+
+            // If ads are not supported/configured on this dashboard project, grant instant pass-through
+            if (!isRewardedSupported && !isInterstitialSupported) {
+                onRewardGranted()
                 return
             }
 
@@ -398,13 +516,11 @@ object UnityAdsManager {
                             state: UnityAds.UnityAdsShowCompletionState?
                         ) {
                             Log.d(TAG, "Rewarded Ad completed: $placementId state=$state")
-                            // Auto-reload next rewarded ad in background immediately
                             mainHandler.postDelayed({ loadRewardedAd() }, 1000L)
 
                             if (state == UnityAds.UnityAdsShowCompletionState.COMPLETED) {
                                 mainHandler.post { onRewardGranted() }
                             } else {
-                                // User skipped without finishing
                                 mainHandler.post { onRewardSkipped() }
                             }
                         }
@@ -452,9 +568,10 @@ object UnityAdsManager {
                 return
             }
 
-            // 3. Fallback when NO ADS loaded: Don't block employee, execute download & trigger preload
-            Log.d(TAG, "No ads currently loaded, triggering instant download fallback")
-            preloadAllAds()
+            // 3. Fallback when NO ADS loaded: Don't block employee, execute download
+            if (isRewardedSupported || isInterstitialSupported) {
+                preloadAllAds()
+            }
             onRewardGranted()
         } catch (t: Throwable) {
             Log.w(TAG, "showRewardedForDownload safely caught: ${t.message}")
@@ -463,7 +580,7 @@ object UnityAdsManager {
     }
 
     /**
-     * Interstitial on successful search
+     * Interstitial trigger on successful search
      */
     fun onSuccessfulSearch(activity: Activity?) {
         if (activity == null || activity.isFinishing || activity.isDestroyed) return
@@ -471,8 +588,8 @@ object UnityAdsManager {
             searchCount++
             if (searchCount % 2 == 1 && isInterstitialLoaded) {
                 showInterstitialIfReady(activity) {}
-            } else {
-                preloadAllAds()
+            } else if (isInterstitialSupported) {
+                loadInterstitialAd()
             }
         } catch (t: Throwable) {
             Log.w(TAG, "onSuccessfulSearch safely caught: ${t.message}")
@@ -488,6 +605,11 @@ object UnityAdsManager {
         try {
             if (!UnityAds.isInitialized) {
                 initialize(activity, currentTestMode)
+                onComplete()
+                return
+            }
+
+            if (!isInterstitialSupported) {
                 onComplete()
                 return
             }
@@ -540,9 +662,9 @@ object UnityAdsManager {
         }
     }
 
-    /**
-     * Loads a Unity Banner Ad with fallback candidate placement traversal.
-     */
+    // =========================================================================
+    // 5. Banner Ad Loading with Candidate Traversal & Circuit Breaker
+    // =========================================================================
     fun loadBanner(
         activity: Activity,
         onLoaded: (BannerView) -> Unit,
@@ -553,8 +675,15 @@ object UnityAdsManager {
             return
         }
 
+        if (!isBannerSupported) {
+            onFailed("Banner placement not available on dashboard")
+            return
+        }
+
         fun tryCandidate(index: Int) {
             if (index >= BANNER_CANDIDATES.size) {
+                isBannerSupported = false
+                Log.i(TAG, "Banner placements not configured on Unity Dashboard for Game ID $GAME_ID. Pausing banner requests.")
                 onFailed("All banner candidates exhausted")
                 return
             }
@@ -565,6 +694,8 @@ object UnityAdsManager {
                 banner.listener = object : BannerView.Listener() {
                     override fun onBannerLoaded(bannerAdView: BannerView?) {
                         Log.d(TAG, "✅ Unity Banner LOADED successfully for placement: $placement")
+                        isBannerSupported = true
+                        activeBannerPlacement = placement
                         if (bannerAdView != null) {
                             onLoaded(bannerAdView)
                         }
@@ -575,7 +706,7 @@ object UnityAdsManager {
                         errorInfo: BannerErrorInfo?
                     ) {
                         val errMsg = errorInfo?.errorMessage ?: "error"
-                        Log.w(TAG, "Banner placement $placement failed: $errMsg. Trying next placement...")
+                        Log.i(TAG, "Banner placement $placement not available: $errMsg. Trying next candidate...")
                         try {
                             bannerAdView?.destroy()
                         } catch (_: Throwable) {}
@@ -591,6 +722,6 @@ object UnityAdsManager {
             }
         }
 
-        tryCandidate(0)
+        tryCandidate(bannerCandidateIndex)
     }
 }

@@ -852,7 +852,7 @@ private fun DropdownSelectionBox(
 @Composable
 fun LoadingOverlay(message: String) {
     androidx.activity.compose.BackHandler(enabled = true) {
-        // Block back press while actively searching
+        // Block back press while actively loading
     }
 
     Box(
@@ -868,64 +868,52 @@ fun LoadingOverlay(message: String) {
         contentAlignment = Alignment.Center
     ) {
         Card(
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = Color.White),
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
             border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
             modifier = Modifier
                 .fillMaxWidth(0.85f)
-                .widthIn(max = 340.dp)
+                .widthIn(max = 320.dp)
                 .padding(16.dp)
                 .testTag("loading_modal_card")
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 28.dp),
+                    .padding(horizontal = 24.dp, vertical = 26.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Box(
-                    modifier = Modifier.size(56.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(
-                        progress = { 1f },
-                        color = Color(0xFFCCFBF1),
-                        strokeWidth = 4.dp,
-                        modifier = Modifier.size(56.dp)
-                    )
-                    CircularProgressIndicator(
-                        color = Color(0xFF0D9488),
-                        strokeWidth = 4.dp,
-                        modifier = Modifier.size(56.dp)
-                    )
-                }
+                CircularProgressIndicator(
+                    color = Color(0xFF0D9488),
+                    strokeWidth = 3.5.dp,
+                    modifier = Modifier.size(46.dp)
+                )
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 Text(
                     text = "براہ کرم انتظار فرمائیں...",
                     style = TextStyle(
                         fontFamily = NotoNastaliqFamily,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 17.sp,
+                        fontSize = 16.sp,
                         color = Color(0xFF134E4A),
                         textAlign = TextAlign.Center
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(4.dp))
 
                 Text(
-                    text = if (message.isNotBlank() && !message.contains("براہ کرم")) message else "آپ کی پے سلپ تلاش کی جا رہی ہے",
+                    text = if (message.isNotBlank() && !message.contains("براہ کرم")) message else "ڈیٹا تصدیق اور حاصل کیا جا رہا ہے...",
                     style = TextStyle(
                         fontFamily = NotoNastaliqFamily,
                         fontWeight = FontWeight.Normal,
-                        fontSize = 13.sp,
+                        fontSize = 12.sp,
                         color = Color(0xFF64748B),
-                        lineHeight = 22.sp,
                         textAlign = TextAlign.Center
                     ),
                     modifier = Modifier.fillMaxWidth()

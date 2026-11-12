@@ -364,53 +364,55 @@ fun HrmisLoginCard(
                     Triple("Federal", "وفاقی ملازمین", "Federal")
                 )
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    categories.forEach { (catKey, urduTitle, enTitle) ->
-                        val isSelected = state.selectedCategory.equals(catKey, ignoreCase = true)
-                        Surface(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(12.dp))
-                                .clickable { onCategorySelected(catKey) }
-                                .testTag("login_cat_$catKey"),
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (isSelected) Color(0xFF0F766E) else Color(0xFFF8FAFC),
-                            border = BorderStroke(
-                                width = if (isSelected) 1.5.dp else 1.dp,
-                                color = if (isSelected) Color(0xFF0F766E) else Color(0xFFCBD5E1)
-                            ),
-                            shadowElevation = if (isSelected) 2.dp else 0.dp
-                        ) {
-                            Column(
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        categories.forEach { (catKey, urduTitle, enTitle) ->
+                            val isSelected = state.selectedCategory.equals(catKey, ignoreCase = true)
+                            Surface(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 8.dp, horizontal = 4.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.Center
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable { onCategorySelected(catKey) }
+                                    .testTag("login_cat_$catKey"),
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isSelected) Color(0xFF0F766E) else Color(0xFFF8FAFC),
+                                border = BorderStroke(
+                                    width = if (isSelected) 1.5.dp else 1.dp,
+                                    color = if (isSelected) Color(0xFF0F766E) else Color(0xFFCBD5E1)
+                                ),
+                                shadowElevation = if (isSelected) 2.dp else 0.dp
                             ) {
-                                Text(
-                                    text = urduTitle,
-                                    style = TextStyle(
-                                        fontFamily = NotoNastaliqFamily,
-                                        fontSize = 11.5.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isSelected) Color.White else Color(0xFF334155),
-                                        textAlign = TextAlign.Center
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 8.dp, horizontal = 4.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Text(
+                                        text = urduTitle,
+                                        style = TextStyle(
+                                            fontFamily = NotoNastaliqFamily,
+                                            fontSize = 11.5.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (isSelected) Color.White else Color(0xFF334155),
+                                            textAlign = TextAlign.Center
+                                        )
                                     )
-                                )
-                                Text(
-                                    text = enTitle,
-                                    style = TextStyle(
-                                        fontFamily = FontFamily.SansSerif,
-                                        fontSize = 10.sp,
-                                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                        color = if (isSelected) Color(0xFFCCFBF1) else Color(0xFF64748B),
-                                        textAlign = TextAlign.Center
+                                    Text(
+                                        text = enTitle,
+                                        style = TextStyle(
+                                            fontFamily = FontFamily.SansSerif,
+                                            fontSize = 10.sp,
+                                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                            color = if (isSelected) Color(0xFFCCFBF1) else Color(0xFF64748B),
+                                            textAlign = TextAlign.Center
+                                        )
                                     )
-                                )
+                                }
                             }
                         }
                     }
@@ -785,6 +787,8 @@ fun HrmisProfileDashboard(
     selectedMonth: String = "Oct",
     availableMonths: List<String> = emptyList(),
     hasUnreadNotifications: Boolean = false,
+    showSecurityCard: Boolean = true,
+    isSalaryLoading: Boolean = false,
     onOpenNotificationsClick: () -> Unit = {},
     onShareAppClick: () -> Unit = {},
     onMonthSelect: (String) -> Unit = {},
@@ -794,12 +798,13 @@ fun HrmisProfileDashboard(
     onEditEmailClick: () -> Unit,
     onLogoutClick: () -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("hrmis_profile_dashboard"),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("hrmis_profile_dashboard"),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
         // 1. Employee Identity Card (Executive Top Bar - Style A)
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -1009,21 +1014,11 @@ fun HrmisProfileDashboard(
 
                 HorizontalDivider(color = Color(0xFFF1F5F9))
 
-                // Bottom: 1-Tap Copyable Identity Chips
+                // Bottom: 1-Tap Copyable Identity Chips (Left: Personal No, Right: CNIC matching original design)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    CopyableDetailChip(
-                        title = "شناختی کارڈ (CNIC)",
-                        value = employee.cnic,
-                        isCopied = copiedLabel == "cnic",
-                        onClick = {
-                            clipboardManager.setText(AnnotatedString(employee.cnic.replace("-", "")))
-                            copiedLabel = "cnic"
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
                     CopyableDetailChip(
                         title = "پرسنل نمبر (Personal No)",
                         value = employee.personnelNo,
@@ -1034,41 +1029,37 @@ fun HrmisProfileDashboard(
                         },
                         modifier = Modifier.weight(1f)
                     )
+                    CopyableDetailChip(
+                        title = "شناختی کارڈ (CNIC)",
+                        value = employee.cnic,
+                        isCopied = copiedLabel == "cnic",
+                        onClick = {
+                            clipboardManager.setText(AnnotatedString(employee.cnic.replace("-", "")))
+                            copiedLabel = "cnic"
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
                 }
             }
         }
 
-        // 2. Quick Month Selector (Horizontal Pills Bar)
-        val quickMonths = if (availableMonths.isNotEmpty()) availableMonths else listOf("Oct", "Sep", "Aug", "Jul", "Jun", "May")
+        // 2. Quick Month Selector (Recent 4 months: Aug, Sep, Oct, Nov matching Image 2)
+        val rawMonths = if (availableMonths.isNotEmpty()) availableMonths else listOf("Nov", "Oct", "Sep", "Aug", "Jul", "Jun", "May")
+        val quickMonths = remember(rawMonths) {
+            val list = rawMonths.filter { it.isNotBlank() }
+            val recent = list.take(4)
+            recent.reversed()
+        }
         Column(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // Header: Left = "سال 2026", Right = "مہینہ تبدیل کریں" (matching original design)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.CalendarMonth,
-                        contentDescription = null,
-                        tint = Color(0xFF0F766E),
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Text(
-                        text = "مہینہ تبدیل کریں (فوری سیلری چیک):",
-                        style = TextStyle(
-                            fontFamily = NotoNastaliqFamily,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF134E4A)
-                        )
-                    )
-                }
                 Surface(
                     shape = RoundedCornerShape(6.dp),
                     color = Color(0xFFF1F5F9)
@@ -1082,6 +1073,27 @@ fun HrmisProfileDashboard(
                             color = Color(0xFF475569)
                         ),
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "مہینہ تبدیل کریں (فوری سیلری چیک):",
+                        style = TextStyle(
+                            fontFamily = NotoNastaliqFamily,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF134E4A)
+                        )
+                    )
+                    Icon(
+                        imageVector = Icons.Default.CalendarMonth,
+                        contentDescription = null,
+                        tint = Color(0xFF0F766E),
+                        modifier = Modifier.size(16.dp)
                     )
                 }
             }
@@ -1135,26 +1147,56 @@ fun HrmisProfileDashboard(
         }
 
         // 3. Monthly Salary Overview Card (with Visual Take-Home Breakdown Bar)
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF042F2E)),
-            elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
-        ) {
+        if (isSalaryLoading) {
+            SalaryCardSkeleton()
+        } else {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF042F2E)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+            ) {
             Column(
                 modifier = Modifier.padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // Header: Month Badge & Title
+                // Header: Title on Left, Month Badges on Right (matching original design)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Text(
+                        text = "ماہانہ سیلری سمری",
+                        style = TextStyle(
+                            fontFamily = NotoNastaliqFamily,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFCCFBF1)
+                        )
+                    )
+
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF14B8A6).copy(alpha = 0.25f),
+                            border = BorderStroke(1.dp, Color(0xFF2DD4BF))
+                        ) {
+                            Text(
+                                text = "موجودہ سلپ",
+                                style = TextStyle(
+                                    fontFamily = NotoNastaliqFamily,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF5EEAD4)
+                                ),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+
                         Surface(
                             shape = RoundedCornerShape(8.dp),
                             color = Color(0xFF0D9488)
@@ -1174,34 +1216,7 @@ fun HrmisProfileDashboard(
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                             )
                         }
-
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF14B8A6).copy(alpha = 0.25f),
-                            border = BorderStroke(1.dp, Color(0xFF2DD4BF))
-                        ) {
-                            Text(
-                                text = "موجودہ سلپ",
-                                style = TextStyle(
-                                    fontFamily = NotoNastaliqFamily,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF5EEAD4)
-                                ),
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
                     }
-
-                    Text(
-                        text = "ماہانہ سیلری سمری",
-                        style = TextStyle(
-                            fontFamily = NotoNastaliqFamily,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFCCFBF1)
-                        )
-                    )
                 }
 
                 // Net Payable Hero Display (Full Width, No Collision)
@@ -1239,47 +1254,12 @@ fun HrmisProfileDashboard(
                     )
                 }
 
-                // Gross Pay & Deductions in 2 Clean Responsive Chips
+                // Gross Pay (Left) & Deductions (Right) matching original screenshot
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Total Deductions Chip
-                    Surface(
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFFEF4444).copy(alpha = 0.15f),
-                        border = BorderStroke(0.8.dp, Color(0xFFF87171).copy(alpha = 0.35f))
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                            verticalArrangement = Arrangement.spacedBy(2.dp)
-                        ) {
-                            Text(
-                                text = "کل کٹوتیاں (Deductions)",
-                                style = TextStyle(
-                                    fontFamily = NotoNastaliqFamily,
-                                    fontSize = 10.sp,
-                                    color = Color(0xFFFCA5A5)
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = "Rs. ${employee.totalDeductions}",
-                                style = TextStyle(
-                                    fontFamily = FontFamily.SansSerif,
-                                    fontSize = 12.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFFECACA)
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-
-                    // Gross Pay Chip
+                    // Gross Pay Chip (Left)
                     Surface(
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(8.dp),
@@ -1307,6 +1287,41 @@ fun HrmisProfileDashboard(
                                     fontSize = 12.5.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    // Total Deductions Chip (Right)
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFFEF4444).copy(alpha = 0.15f),
+                        border = BorderStroke(0.8.dp, Color(0xFFF87171).copy(alpha = 0.35f))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = "کل کٹوتیاں (Deductions)",
+                                style = TextStyle(
+                                    fontFamily = NotoNastaliqFamily,
+                                    fontSize = 10.sp,
+                                    color = Color(0xFFFCA5A5)
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "Rs. ${employee.totalDeductions}",
+                                style = TextStyle(
+                                    fontFamily = FontFamily.SansSerif,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFFECACA)
                                 ),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -1342,27 +1357,27 @@ fun HrmisProfileDashboard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "خالص وصولی (Take-home): $netPct%",
-                            style = TextStyle(
-                                fontFamily = NotoNastaliqFamily,
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF5EEAD4)
-                            ),
-                            modifier = Modifier.weight(1f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
                             text = "کٹوتیاں (Deductions): $dedPct%",
                             style = TextStyle(
                                 fontFamily = NotoNastaliqFamily,
                                 fontSize = 10.5.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFFFCA5A5),
-                                textAlign = TextAlign.End
+                                color = Color(0xFFFCA5A5)
                             ),
                             maxLines = 1
+                        )
+                        Text(
+                            text = "خالص وصولی (Take-home): $netPct%",
+                            style = TextStyle(
+                                fontFamily = NotoNastaliqFamily,
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF5EEAD4),
+                                textAlign = TextAlign.End
+                            ),
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
 
@@ -1375,20 +1390,20 @@ fun HrmisProfileDashboard(
                     ) {
                         Box(
                             modifier = Modifier
-                                .weight((netPct / 100f).coerceIn(0.1f, 0.95f))
-                                .fillMaxHeight()
-                                .background(Color(0xFF2DD4BF))
-                        )
-                        Box(
-                            modifier = Modifier
                                 .weight((dedPct / 100f).coerceIn(0.05f, 0.9f))
                                 .fillMaxHeight()
                                 .background(Color(0xFFF87171))
                         )
+                        Box(
+                            modifier = Modifier
+                                .weight((netPct / 100f).coerceIn(0.1f, 0.95f))
+                                .fillMaxHeight()
+                                .background(Color(0xFF2DD4BF))
+                        )
                     }
                 }
 
-                // View Payslip Action Button
+                // View Payslip Action Button (matching original design)
                 Button(
                     onClick = onViewPayslipClick,
                     modifier = Modifier
@@ -1400,24 +1415,31 @@ fun HrmisProfileDashboard(
                         contentColor = Color(0xFF0F766E)
                     )
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Description,
-                        contentDescription = null,
-                        tint = Color(0xFF0F766E),
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "مکمل پے سلپ دیکھیں اور PDF ڈاؤنلوڈ کریں",
-                        style = TextStyle(
-                            fontFamily = NotoNastaliqFamily,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF0F766E)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = "مکمل پے سلپ دیکھیں اور PDF ڈاؤنلوڈ کریں",
+                            style = TextStyle(
+                                fontFamily = NotoNastaliqFamily,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF0F766E)
+                            )
                         )
-                    )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Icon(
+                            imageVector = Icons.Default.Description,
+                            contentDescription = null,
+                            tint = Color(0xFF0F766E),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
+        }
         }
 
         // 4. GPF Balance Card
@@ -1435,13 +1457,31 @@ fun HrmisProfileDashboard(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Column {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFFF0FDFA),
+                        border = BorderStroke(1.dp, Color(0xFFCCFBF1))
+                    ) {
+                        Text(
+                            text = "Acc: ${employee.gpfAccountNo.ifBlank { "CP V 26 P 175" }}",
+                            style = TextStyle(
+                                fontFamily = FontFamily.SansSerif,
+                                fontSize = 11.sp,
+                                color = Color(0xFF0F766E),
+                                fontWeight = FontWeight.Medium
+                            ),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+
+                    Column(horizontalAlignment = Alignment.End) {
                         Text(
                             text = "جی پی فنڈ بیلنس (GPF Balance)",
                             style = TextStyle(
                                 fontFamily = NotoNastaliqFamily,
                                 fontSize = 12.sp,
-                                color = Color(0xFF64748B)
+                                color = Color(0xFF64748B),
+                                textAlign = TextAlign.End
                             )
                         )
                         Text(
@@ -1450,25 +1490,9 @@ fun HrmisProfileDashboard(
                                 fontFamily = FontFamily.SansSerif,
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF0D9488)
+                                color = Color(0xFF0D9488),
+                                textAlign = TextAlign.End
                             )
-                        )
-                    }
-
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFFF0FDFA),
-                        border = BorderStroke(1.dp, Color(0xFFCCFBF1))
-                    ) {
-                        Text(
-                            text = "Acc: ${employee.gpfAccountNo.ifBlank { "Active" }}",
-                            style = TextStyle(
-                                fontFamily = FontFamily.SansSerif,
-                                fontSize = 11.sp,
-                                color = Color(0xFF0F766E),
-                                fontWeight = FontWeight.Medium
-                            ),
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
                 }
@@ -1609,9 +1633,10 @@ fun HrmisProfileDashboard(
             }
         }
 
-        // 4. Security & Account Settings Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
+        // 4. Security & Account Settings Card (Shown only if showSecurityCard is true)
+        if (showSecurityCard) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = Color.White),
             border = BorderStroke(1.dp, Color(0xFFE2E8F0))
@@ -1823,6 +1848,8 @@ fun HrmisProfileDashboard(
                 }
             }
         }
+    }
+}
     }
 }
 

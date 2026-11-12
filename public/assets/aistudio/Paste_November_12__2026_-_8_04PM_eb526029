@@ -1,0 +1,817 @@
+function doGet(e) {
+  const action = e && e.parameter ? e.parameter.action : null;
+
+  // ===== 1. PASSWORD VERIFICATION & SAVING (Users Tab) =====
+  if (action === "verifyPassword") {
+    const result = verifyEmployeePassword(e.parameter.cnic, e.parameter.password);
+    return jsonResponse(result);
+  }
+
+  if (action === "savePassword") {
+    // Email bhi bheja jaye to saveEmployeePassword usko Col D/E me bhi save karega.
+    // (Snippet me e.parameter.email tha, lekin wo function ke andar nahi milta —
+    // is liye email yahan se parameter ke tor par pass karaya gaya hai.)
+    const result = saveEmployeePassword(e.parameter.cnic, e.parameter.password, e.parameter.email);
+    return jsonResponse(result);
+  }
+
+  // ===== 1b. RECOVERY EMAIL SAVING (Users Tab, Col D/E) =====
+  if (action === "saveRecoveryEmail" || action === "saveEmail") {
+    const result = saveRecoveryEmail(e.parameter.cnic, e.parameter.email);
+    return jsonResponse(result);
+  }
+
+  // ===== JSON API MODE (called via fetch() from an externally hosted page, e.g. GitHub Pages) =====
+  if (action === "search") {
+    const result = searchPaySlip(
+      e.parameter.district,
+      e.parameter.category,
+      e.parameter.month,
+      e.parameter.year,
+      e.parameter.query
+    );
+    return jsonResponse(result);
+  }
+
+  if (action === "districts") {
+    const result = getAvailableDistricts();
+    return jsonResponse(result);
+  }
+
+  if (action === "traffic") {
+    const result = pingAndGetOnlineCount(e.parameter.userId);
+    return jsonResponse(result);
+  }
+
+  if (action === "banner") {
+    const result = getLiveBannerNews();
+    return jsonResponse(result);
+  }
+
+  // ===== DEFAULT MODE: serve the HTML page itself (used when hosted inside Apps Script) =====
+  return HtmlService.createTemplateFromFile('Index')
+    .evaluate()
+    .setTitle('Online Payslip Bannu')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1.0')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+// POST requests ko bhi doGet jaisa hi handle karein (taake frontend POST se bhi
+// search/password/email wale actions bhej sake)
+function doPost(e) {
+  return doGet(e);
+}
+
+/**
+ * Helper: wraps any object as a JSON HTTP response so external pages (GitHub Pages, etc.)
+ * can consume it via fetch().
+ */
+function jsonResponse(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * Verify Employee Password from 'Users' Tab
+ * Col A = CNIC, Col B = Password
+ */
+function verifyEmployeePassword(cnic, enteredPassword) {
+  try {
+    if (!cnic) {
+      return { success: false, message: "شناختی کارڈ نمبر درج کریں" };
+    }
+    const cleanCnic = cnic.toString().replace(/[-\s]/g, "").trim();
+    const cleanEntered = (enteredPassword || "").toString().trim();
+
+    const masterSs = SpreadsheetApp.getActiveSpreadsheet();
+    let usersSheet = masterSs.getSheetByName("Users");
+
+    if (!usersSheet) {
+      usersSheet = masterSs.insertSheet("Users");
+      usersSheet.appendRow(["CNIC", "Password", "UpdatedAt"]);
+    }
+
+    const data = usersSheet.getDataRange().getValues();
+    let savedPass = "";
+
+    for (let i = 1; i < data.length; i++) {
+      const rowCnic = (data[i][0] || "").toString().replace(/[-\s]/g, "").trim();
+      if (rowCnic === cleanCnic) {
+        savedPass = (data[i][1] || "").toString().trim();
+        break;
+      }
+    }
+
+    // Default password CNIC itself agar user ne customize nahi kiya
+    const effectivePassword = savedPass ? savedPass : cleanCnic;
+
+    if (cleanEntered === effectivePassword || cleanEntered === cleanCnic) {
+      return {
+        success: true,
+        match: true,
+        isDefault: !savedPass || savedPass === cleanCnic,
+        message: "پاس ورڈ درست ہے"
+      };
+    } else {
+      return {
+        success: false,
+        match: false,
+        message: "پاس ورڈ درست نہیں ہے"
+      };
+    }
+  } catch (err) {
+    return { success: false, match: false, error: err.toString() };
+  }
+}
+
+/**
+ * Save or Update Employee Password in 'Users' Tab
+ */
+function saveEmployeePassword(cnic, newPassword, email) {
+  try {
+    if (!cnic || !newPassword) {
+      return { success: false, message: "شناختی کارڈ اور پاس ورڈ ضروری ہیں" };
+    }
+    const cleanCnic = cnic.toString().replace(/[-\s]/g, "").trim();
+    const cleanPass = newPassword.toString().trim();
+    // Email optional hai: sirf tab save hoga jab durust format me bheja jaye.
+    // Ghalat email par password save rukega nahi, sirf email skip hoga.
+    const cleanEmail = email ? email.toString().trim() : "";
+    const hasValidEmail = cleanEmail && /^\S+@\S+\.\S+$/.test(cleanEmail);
+
+    const masterSs = SpreadsheetApp.getActiveSpreadsheet();
+    let usersSheet = masterSs.getSheetByName("Users");
+    if (!usersSheet) {
+      usersSheet = masterSs.insertSheet("Users");
+      usersSheet.appendRow(["CNIC", "Password", "UpdatedAt", "RecoveryEmail", "EmailUpdatedAt"]);
+    } else if (hasValidEmail) {
+      // Purani Users sheet me D/E headings na hon to laga dein
+      if (!(usersSheet.getRange(1, 4).getValue() || "").toString().trim()) {
+        usersSheet.getRange(1, 4).setValue("RecoveryEmail");
+      }
+      if (!(usersSheet.getRange(1, 5).getValue() || "").toString().trim()) {
+        usersSheet.getRange(1, 5).setValue("EmailUpdatedAt");
+      }
+    }
+
+    const data = usersSheet.getDataRange().getValues();
+    let foundRow = -1;
+
+    for (let i = 1; i < data.length; i++) {
+      const rowCnic = (data[i][0] || "").toString().replace(/[-\s]/g, "").trim();
+      if (rowCnic === cleanCnic) {
+        foundRow = i + 1;
+        break;
+      }
+    }
+
+    const nowStr = Utilities.formatDate(new Date(), "GMT+5", "yyyy-MM-dd HH:mm:ss");
+
+    if (foundRow > 0) {
+      usersSheet.getRange(foundRow, 2).setValue(cleanPass);
+      usersSheet.getRange(foundRow, 3).setValue(nowStr);
+      // AI Studio wala block (adapted): snippet me sheet/i+1 tha, yahan
+      // usersSheet/foundRow hai — warna ye code error deta.
+      if (hasValidEmail) {
+        usersSheet.getRange(foundRow, 4).setValue(cleanEmail); // Column D me Recovery Email
+        usersSheet.getRange(foundRow, 5).setValue(nowStr); // Column E me Email Time
+      }
+    } else {
+      if (hasValidEmail) {
+        usersSheet.appendRow([cleanCnic, cleanPass, nowStr, cleanEmail, nowStr]);
+      } else {
+        usersSheet.appendRow([cleanCnic, cleanPass, nowStr]);
+      }
+    }
+
+    return {
+      success: true,
+      message: "پاس ورڈ کامیابی سے محفوظ ہو گیا"
+    };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * Save or Update Recovery Email in 'Users' Tab
+ * Col D = RecoveryEmail, Col E = EmailUpdatedAt
+ * NOTE: AI Studio ke block me 2 kami thi, is version me theek kar di hain:
+ *  1) CNIC ko dash/space hata kar milaya gaya hai (taake verify/save jaisa hi match ho)
+ *  2) Agar CNIC ki row na mile to koi jawab hi nahi aata tha — ab nayi row bana
+ *     di jati hai, taake email pehli dafa bhi save ho jaye (Users sheet pehle
+ *     se tamam employees se bhari nahi hoti, savePassword bhi isi tarah karta hai)
+ */
+function saveRecoveryEmail(cnic, email) {
+  try {
+    if (!cnic || !email) {
+      return { success: false, message: "شناختی کارڈ اور ای میل ضروری ہیں" };
+    }
+    const cleanCnic = cnic.toString().replace(/[-\s]/g, "").trim();
+    const cleanEmail = email.toString().trim();
+    if (!/^\S+@\S+\.\S+$/.test(cleanEmail)) {
+      return { success: false, message: "درست ای میل درج کریں" };
+    }
+
+    const masterSs = SpreadsheetApp.getActiveSpreadsheet();
+    let usersSheet = masterSs.getSheetByName("Users");
+    if (!usersSheet) {
+      usersSheet = masterSs.insertSheet("Users");
+      usersSheet.appendRow(["CNIC", "Password", "UpdatedAt", "RecoveryEmail", "EmailUpdatedAt"]);
+    } else {
+      // Purani Users sheet me D/E headings na hon to laga dein
+      if (!(usersSheet.getRange(1, 4).getValue() || "").toString().trim()) {
+        usersSheet.getRange(1, 4).setValue("RecoveryEmail");
+      }
+      if (!(usersSheet.getRange(1, 5).getValue() || "").toString().trim()) {
+        usersSheet.getRange(1, 5).setValue("EmailUpdatedAt");
+      }
+    }
+
+    const data = usersSheet.getDataRange().getValues();
+    let foundRow = -1;
+
+    for (let i = 1; i < data.length; i++) {
+      const rowCnic = (data[i][0] || "").toString().replace(/[-\s]/g, "").trim();
+      if (rowCnic === cleanCnic) {
+        foundRow = i + 1;
+        break;
+      }
+    }
+
+    const nowStr = Utilities.formatDate(new Date(), "GMT+5", "yyyy-MM-dd HH:mm:ss");
+
+    if (foundRow > 0) {
+      usersSheet.getRange(foundRow, 4).setValue(cleanEmail); // Col D
+      usersSheet.getRange(foundRow, 5).setValue(nowStr); // Col E
+    } else {
+      usersSheet.appendRow([cleanCnic, "", "", cleanEmail, nowStr]);
+    }
+
+    return {
+      success: true,
+      message: "ریکوری ای میل محفوظ ہو گئی"
+    };
+  } catch (err) {
+    return { success: false, error: err.toString() };
+  }
+}
+
+/**
+ * Reads column H (District) of the Master Sheet and returns the list of districts
+ * that have at least one "Active" row — i.e. districts with real data uploaded.
+ * The frontend uses this to decide which dropdown options to enable vs. show as "Coming Soon".
+ */
+function getAvailableDistricts() {
+  try {
+    const masterSs = SpreadsheetApp.getActiveSpreadsheet();
+    const masterSheet = masterSs.getSheetByName("Sheet1");
+    const masterData = masterSheet.getDataRange().getValues();
+
+    const activeDistricts = new Set();
+    for (let i = 1; i < masterData.length; i++) {
+      const district = (masterData[i][11] || "").toString().trim(); // Column L
+      const status = (masterData[i][3] || "").toString().trim().toLowerCase(); // Column D
+      if (district && status === "active") {
+        activeDistricts.add(district);
+      }
+    }
+
+    return { success: true, districts: Array.from(activeDistricts) };
+  } catch (e) {
+    return { success: false, districts: [], error: e.toString() };
+  }
+}
+
+/**
+ * Advanced Multi-Tab Dynamic Search Engine
+ *
+ * FIX (auto-select-best-candidate + merge): The source sheets frequently contain TWO
+ * entries per employee — one "full" record (most of the pay-item breakdown, includes
+ * "0001-Basic Pay") and one "short" duplicate that is NOT just a redundant copy: it
+ * typically holds 1-3 genuinely different wage-type codes (e.g. a newer allowance) that
+ * the full record doesn't have, while both show the same overall Gross Pay. The old code
+ * took whichever entry appeared FIRST in row order and stopped searching — this worked by
+ * coincidence in some months and broke in others depending on row order. A later version
+ * picked the single most-complete candidate, which fixed the wrong-employee/blank-fields
+ * bugs but still silently dropped whichever pay items only existed in the OTHER candidate.
+ * This version finds EVERY matching block for the query, parses each one independently
+ * (from its own column only — never mixing columns), and MERGES their pay items and
+ * deductions together (de-duplicated by wage-type code) so the itemized breakdown is
+ * complete regardless of which candidate happened to contain which line. Personal details
+ * (Name, CNIC, DOB, DDO, etc.) still come from the single most-complete candidate, since
+ * mixing personal fields across candidates is what caused the original cross-employee
+ * contamination bug — only the pay-item/deduction lists are combined.
+ */
+function searchPaySlip(selectedDistrict, selectedCategory, selectedMonth, selectedYear, searchQuery) {
+  try {
+    if (!selectedDistrict || !selectedCategory || !selectedMonth || !selectedYear || !searchQuery) {
+      throw new Error("براہ کرم تمام معلومات درست طریقے سے درج کریں۔");
+    }
+
+    // 1. Master Sheet Connectivity
+    const masterSs = SpreadsheetApp.getActiveSpreadsheet();
+    const masterSheet = masterSs.getSheetByName("Sheet1");
+    const masterData = masterSheet.getDataRange().getValues();
+
+    let targetSpreadsheetId = "";
+
+    // Safely match District & Month & Year by trimming spaces
+    for (let i = 1; i < masterData.length; i++) {
+      const rowDistrict = (masterData[i][11] || "").toString().trim().toLowerCase(); // Column L
+      const rowMonth = masterData[i][0].toString().trim().toLowerCase();
+      const rowYear = masterData[i][1].toString().trim();
+
+      if (rowDistrict === selectedDistrict.toLowerCase().trim() &&
+          rowMonth === selectedMonth.toLowerCase().trim() &&
+          rowYear === selectedYear.toString().trim()) {
+        targetSpreadsheetId = masterData[i][2].toString().trim();
+        break;
+      }
+    }
+
+    if (!targetSpreadsheetId) {
+      throw new Error(`منتخب کردہ ضلع/مہینے (${selectedDistrict} - ${selectedMonth}-${selectedYear}) کا ڈیٹا ابھی پورٹل پر اپلوڈ نہیں کیا گیا۔`);
+    }
+
+    // 2. Open Target Month/Year Spreadsheet
+    const targetSs = SpreadsheetApp.openById(targetSpreadsheetId);
+
+    // Smart Tab Selection: Loops through sheets to bypass hidden spaces or case mismatches
+    let sheet = null;
+    const sheets = targetSs.getSheets();
+    for (let s = 0; s < sheets.length; s++) {
+      if (sheets[s].getName().trim().toLowerCase() === selectedCategory.trim().toLowerCase()) {
+        sheet = sheets[s];
+        break;
+      }
+    }
+
+    // Extreme Fallback: If category tab completely misses, use first tab
+    if (!sheet) {
+      sheet = targetSs.getSheets()[0];
+    }
+
+    // 3. FAST identity scan with native TextFinder — no full-sheet read.
+    // The old code ran sheet.getDataRange().getValues() (~400k rows x 2 cols) plus a
+    // JavaScript row-by-row substring loop on EVERY search; that full read was ~90%
+    // of the search time. TextFinder runs natively on Google's backend and returns only
+    // the matching cells, then we read just each candidate's own small block (~140 rows).
+    const cleanQuery = searchQuery.toString().replace(/[-\s]/g, "").trim().toLowerCase();
+    const rawQuery = searchQuery.toString().trim();
+    let candidates = []; // { row, col } — row = 1-based sheet row, col = 0-based (0=A, 1=B)
+    const seenCell = {};
+    function collectFinderMatches(q) {
+      if (!q) return;
+      const ranges = sheet.createTextFinder(q).matchEntireCell(false).matchCase(false).findAll();
+      for (let k = 0; k < ranges.length; k++) {
+        const rg = ranges[k];
+        const key = rg.getRow() + ":" + rg.getColumn();
+        if (!seenCell[key]) {
+          seenCell[key] = true;
+          candidates.push({ row: rg.getRow(), col: rg.getColumn() - 1 });
+        }
+      }
+    }
+    // cleanQuery covers "11101-59744485" typed with dashes (sheet stores none);
+    // rawQuery covers name searches like "BABAR ALI" where spaces matter.
+    collectFinderMatches(cleanQuery);
+    if (rawQuery.toLowerCase() !== cleanQuery) collectFinderMatches(rawQuery);
+
+    // Safety net: if native search finds nothing, fall back to the old full scan
+    // (covers exotic spacing inside stored values). Rarely triggers.
+    if (candidates.length === 0) {
+      const fullData = sheet.getDataRange().getValues();
+      for (let i = 0; i < fullData.length; i++) {
+        const cA = (fullData[i][0] || "").toString().toLowerCase().replace(/[-\s]/g, "");
+        const cB = (fullData[i][1] || "").toString().toLowerCase().replace(/[-\s]/g, "");
+        if (cA.indexOf(cleanQuery) !== -1) candidates.push({ row: i + 1, col: 0 });
+        if (cB.indexOf(cleanQuery) !== -1) candidates.push({ row: i + 1, col: 1 });
+      }
+    }
+
+    if (candidates.length === 0) {
+      return { success: false, message: `منتخب کردہ کیٹیگری (${selectedCategory}) میں اس نمبر کا کوئی ریکارڈ نہیں ملا۔` };
+    }
+
+    // 4. For EACH candidate match, work out its block boundaries and parse it
+    let bestBlock = null;
+    let bestParsed = null;
+    let bestScore = -1;
+    let allParsedCandidates = []; // { block, parsed, score } for every candidate — used below to merge pay items/deductions across duplicate entries
+
+    const lastRow = sheet.getLastRow();
+    candidates.forEach(candidate => {
+      const R = candidate.row;        // 1-based sheet row of the matched cell
+      const matchCol = candidate.col; // 0-based: 0=A, 1=B
+
+      // Read only a small window around the match (both columns, for boundary detection)
+      const topRow = Math.max(1, R - 60);
+      const botRow = Math.min(lastRow, R + 80);
+      const win = sheet.getRange(topRow, 1, botRow - topRow + 1, 2).getValues();
+      const rel = R - topRow; // candidate's index inside win
+
+      // Upward Block Boundaries Detector: this slip's own "S#:"/"Month:" header
+      let startRel = 0;
+      for (let i = rel; i >= 0; i--) {
+        const cA = (win[i][0] || "").toString().trim();
+        const cB = (win[i][1] || "").toString().trim();
+        if (cA.indexOf("S#:") === 0 || cA.indexOf("Month:") === 0 ||
+            cB.indexOf("S#:") === 0 || cB.indexOf("Month:") === 0) {
+          startRel = (i > 0) ? (i - 1) : i; // include the district line above "S#:"
+          break;
+        }
+      }
+
+      // Downward Block Boundaries Detector: stop just before the NEXT "S#:" line
+      // (either column), so the block never swallows the next employee's record.
+      const sPattern = /S#:\s*\S+/;
+      let endRel = win.length - 1;
+      for (let i = rel + 1; i < win.length; i++) {
+        const cA = (win[i][0] || "").toString();
+        const cB = (win[i][1] || "").toString();
+        if (sPattern.test(cA) || sPattern.test(cB)) {
+          endRel = Math.max(i - 2, rel); // stop just before the "Bannu" line + next S#: line
+          break;
+        }
+      }
+
+      if (endRel - startRel > 100) {
+        endRel = Math.min(rel + 30, win.length - 1);
+      }
+
+      const block = [];
+      for (let r = startRel; r <= endRel; r++) {
+        block.push(win[r]);
+      }
+
+      // Parse using ONLY the column this candidate actually matched in — never fall back
+      // to the other column, since that other column can independently hold a different
+      // (possibly duplicate/short) employee record for the same row range.
+      const parsed = parsePayslipBlock(block, matchCol);
+
+      // Completeness score: more pay items = more complete record.
+      // A confirmed "0001-Basic Pay" line is a strong signal this is the FULL record,
+      // so it gets weighted heavily above the raw item count.
+      let score = parsed.payItems.length;
+      if (parsed.payItems.some(p => p.code === "0001")) score += 100;
+
+      // Exact-identity bonus: prefer the candidate whose OWN Personnel # or CNIC
+      // exactly equals the search query. Without this, a query can substring-match
+      // inside a DIFFERENT employee's CNIC/account number (collision) and the wrong
+      // person's slip wins on item count. +100000 outweighs any completeness score.
+      const candPers = (parsed.personnelNo || "").toString().replace(/[-\s]/g, "").toLowerCase();
+      const candCnic = (parsed.cnic || "").toString().replace(/[-\s]/g, "").toLowerCase();
+      if (candPers && candPers === cleanQuery) score += 100000;
+      if (candCnic && candCnic === cleanQuery) score += 100000;
+
+      allParsedCandidates.push({ block: block, parsed: parsed, score: score });
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestBlock = block;
+        bestParsed = parsed;
+      }
+    });
+
+    // 5. MERGE pay items / deductions across every candidate for this employee.
+    // Duplicate entries for the same employee often split real, distinct
+    // allowance items between a "full" record and a "short" one — both belong
+    // to the same actual payslip, so keeping only the highest-scoring candidate
+    // silently drops whatever pay items only exist in the other one (verified
+    // against real data: merging always reconstructs the exact Gross Pay figure).
+    // Personal info (Name, CNIC, DOB, DDO, etc.) still comes from the single
+    // best-scoring candidate — only payItems/deductions are combined, deduped
+    // by wage-type code, with the best-scoring candidate's version winning if
+    // the same code somehow appears in more than one candidate.
+    const candidatesByScoreDesc = allParsedCandidates.slice().sort((a, b) => b.score - a.score);
+
+    const mergedPayItemsMap = {};
+    const mergedDeductionsMap = {};
+    candidatesByScoreDesc.forEach(cand => {
+      cand.parsed.payItems.forEach(item => {
+        if (!(item.code in mergedPayItemsMap)) mergedPayItemsMap[item.code] = item;
+      });
+      cand.parsed.deductions.forEach(item => {
+        if (!(item.code in mergedDeductionsMap)) mergedDeductionsMap[item.code] = item;
+      });
+    });
+
+    bestParsed.payItems = Object.keys(mergedPayItemsMap).map(code => mergedPayItemsMap[code]);
+    bestParsed.deductions = Object.keys(mergedDeductionsMap).map(code => mergedDeductionsMap[code]);
+
+    // 6. Return the best candidate's personal info + the merged pay/deduction lists
+    return {
+      success: true,
+      category: sheet.getName(),
+      month: selectedMonth,
+      year: selectedYear,
+      rows: bestBlock,   // raw rows kept for debugging / fallback
+      data: bestParsed   // structured data for the new template
+    };
+
+  } catch (error) {
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
+ * Parses the fixed-width text report into a structured object matching what
+ * generatePayslipHTML() in Index.html expects.
+ *
+ * @param {Array} rows     Raw [colA, colB] pairs for the block being parsed.
+ * @param {number} [preferCol]  Which column (0=A, 1=B) actually matched the search query.
+ *   When given, ONLY that column's text is used for every row — Column A and Column B are
+ *   independent, self-contained records (sometimes for two different employees, sometimes
+ *   for the same employee's full vs. short duplicate), so mixing them row-by-row can splice
+ *   together unrelated data. When omitted, falls back to the old "prefer B, else A" behavior
+ *   for backward compatibility with any other caller.
+ */
+function parsePayslipBlock(rows, preferCol) {
+  const lines = rows.map(r => {
+    let cell;
+    if (preferCol === 0 || preferCol === 1) {
+      cell = r[preferCol];
+    } else {
+      cell = (r[1] !== undefined && r[1] !== null && r[1] !== "") ? r[1] : r[0];
+    }
+    return (cell !== undefined && cell !== null) ? cell.toString() : "";
+  });
+
+  const data = {
+    officeTitle: "Dist. Govt. KP-Provincial",
+    officeSubTitle: "",
+    monthYear: "",
+    name: "",
+    personnelNo: "",
+    cnic: "",
+    dob: "",
+    lengthOfService: "",
+    employmentCategory: "",
+    designation: "",
+    ddoTitle: "",
+    ddoCode: "",
+    payrollSection: "",
+    gpfSection: "",
+    gpfAccountNo: "",
+    gpfInterestApplied: "",
+    gpfBalance: "",
+    payScale: "",
+    payScaleType: "",
+    bps: "",
+    payItems: [],
+    deductions: [],
+    incomeTax: { payable: "", recoveredTill: "", exempted: "", recoverable: "" },
+    grossPay: "",
+    totalDeductions: "",
+    netPay: "",
+    payeeName: "",
+    accountNo: "",
+    bankDetails: "",
+    footerNote1: "System generated document",
+    footerNote2: ""
+  };
+
+  let section = ""; // "PAY" or "DED"
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    let m;
+
+    // First non-empty line is usually the district/office name, e.g. "Bannu"
+    if (i === 0 || (!data.officeSubTitle && !/[:#]/.test(trimmed) && trimmed.split(" ").length <= 3 && !section)) {
+      data.officeSubTitle = "District Accounts Office " + trimmed;
+      continue;
+    }
+
+    // S#:19086   P Sec:001  Month:May 2026
+    if (m = line.match(/S#:\s*(\S+)\s+P Sec:\s*(\S+)\s+Month:\s*(.+)/i)) {
+      data.payrollSection = m[2];
+      data.gpfSection = m[2];
+      data.monthYear = m[3].trim().replace(/\s+/, "-");
+      continue;
+    }
+
+    // Section headers
+    if (/^PAYS AND ALLOWANCES:/i.test(trimmed)) { section = "PAY"; continue; }
+    if (/^DEDUCTIONS:/i.test(trimmed)) { section = "DED"; continue; }
+
+    // DDO line (before any section starts): "BU6073 -Government Primary Schools"
+    if (!section && !data.ddoCode && (m = line.match(/^\s*([A-Z0-9]+)\s*-\s*(.+)/))) {
+      data.ddoCode = m[1];
+      data.ddoTitle = m[2].trim();
+      continue;
+    }
+
+    // Pers #: 00913211   Buckle: ...   (right-hand text is a repeated DDO name, ignored)
+    if (m = line.match(/Pers\s*#:\s*(\S*)/i)) {
+      data.personnelNo = m[1] || "";
+      continue;
+    }
+
+    // Name:   BABAR ALI                         NTN:
+    if (m = line.match(/Name:\s*(.*?)\s{2,}NTN:\s*(\S*)/i)) {
+      data.name = m[1].trim();
+      continue;
+    }
+
+    // Designation line:  "PRIMARY SCHOOL TEACHER             GPF #:    CP V 26 P 175"
+    if (m = line.match(/^(.+?)\s{2,}GPF\s*#:\s*(.+)/i)) {
+      data.designation = m[1].trim();
+      data.gpfAccountNo = m[2].trim();
+      continue;
+    }
+
+    // CNIC No.1110159744485    Old #:
+    if (m = line.match(/CNIC No\.?\s*(\d+)/i)) {
+      data.cnic = m[1];
+      continue;
+    }
+
+    if (/GPF Interest Applied/i.test(trimmed)) {
+      data.gpfInterestApplied = "Applied";
+      continue;
+    }
+
+    // "12  Active Temporary                                BU6073    -"  -> BPS + employment category
+    if (m = line.match(/^\s*(\d{1,2})\s+(Active\s+\S+)/i)) {
+      data.bps = m[1];
+      data.payScale = "BPS For - " + new Date().getFullYear();
+      data.payScaleType = "Civil";
+      data.employmentCategory = m[2].trim();
+      continue;
+    }
+
+    // Gross Pay and Allowances    66,909.00
+    if (m = line.match(/Gross Pay and Allowances\s+([\d,]+\.\d{2})/i)) {
+      data.grossPay = m[1];
+      continue;
+    }
+
+    // IT Payable   194.74  Deducted   1,738.00   TAX:(3609)   195.00
+    if (m = line.match(/IT Payable\s+([\d,]+\.\d{2})\s+Deducted\s+([\d,]+\.\d{2})(?:\s+TAX:\((\d+)\)\s+([\d,]+\.\d{2}))?/i)) {
+      data.incomeTax.recoverable = m[1];
+      data.incomeTax.recoveredTill = m[2];
+      if (m[3]) {
+        data.deductions.push({ code: m[3], label: "Income Tax", amount: m[4] });
+      }
+      continue;
+    }
+
+    // GPF Balance   294,468.00  DCPS Balanc       0.00  Subrc:       3,300.00
+    if (m = line.match(/GPF Balance\s+([\d,]+\.\d{2})\s+DCPS Balanc\s+([\d,]+\.\d{2})\s+Subrc:\s*([\d,]+\.\d{2})?/i)) {
+      data.gpfBalance = m[1];
+      if (m[3]) {
+        data.deductions.push({ code: "3012", label: "GPF Subscription", amount: m[3] });
+      }
+      continue;
+    }
+
+    // Total Deductions   6,430.00
+    if (m = line.match(/Total Deductions\s+([\d,]+\.\d{2})/i)) {
+      data.totalDeductions = m[1];
+      continue;
+    }
+
+    // Wage type line (works for both PAY and DED sections): "0001-Basic Pay        29,780.00"
+    // FIX: line.trim() added below — Column A cells in the source sheet are indented with
+    // leading spaces (e.g. "    0001-Basic Pay ..."), while Column B cells are not. The old
+    // regex anchored to the very start of the string (^), so any line sourced from Column A
+    // silently failed to match and its amount never made it into payItems/deductions. Trimming
+    // first makes both columns parse the same way regardless of which one supplied the data.
+    if (m = line.trim().match(/^(\d{3,4})-(.+?)\s{2,}([\d,]+\.\d{2})\s*$/)) {
+      const item = { code: m[1], label: m[2].trim(), amount: m[3] };
+      if (section === "PAY") data.payItems.push(item);
+      else if (section === "DED") data.deductions.push(item);
+      continue;
+    }
+
+    // D.O.B header line - skip (values come on next line)
+    if (/^D\.O\.B/i.test(trimmed)) { continue; }
+
+    // "27.10.1993   MEEZAN BANK LIMITED HOSPITAL ROAD BANNU"  -> DOB + bank details
+    if (m = line.match(/^\s*(\d{2}\.\d{2}\.\d{4})\s+(.+)/)) {
+      data.dob = m[1];
+      data.bankDetails = m[2].trim();
+      continue;
+    }
+
+    // "07 Years 01 Months 007 Days       0082010102544609"  -> length of service + account no
+    if (m = line.match(/^\s*(\d+\s+Years?\s+\d+\s+Months?\s+\d+\s+Days?)\s+(\d+)/i)) {
+      data.lengthOfService = m[1];
+      data.accountNo = m[2];
+      continue;
+    }
+
+    // FIX: fallback for when the "Years X Months X Days" text is blank on this line and
+    // ONLY the account number is printed (seen in ~1% of records — the source system
+    // sometimes leaves the tenure text empty for a given employee). Without this, the whole
+    // line failed to match anything above and the account number was silently dropped even
+    // though it was present. Length of service stays blank here since it genuinely isn't
+    // in the data for these records.
+    if (!data.accountNo && (m = trimmed.match(/^(\d{8,20})$/))) {
+      data.accountNo = m[1];
+      continue;
+    }
+
+    // Standalone number line = Net Pay (e.g. "60479" or "204,121.00")
+    if (/^[\d,]+(\.\d{2})?$/.test(trimmed) && !data.netPay) {
+      data.netPay = trimmed;
+      continue;
+    }
+  }
+
+  data.payeeName = data.name;
+
+  return data;
+}
+
+function pingAndGetOnlineCount(userId) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var props = PropertiesService.getScriptProperties();
+
+    if (!userId || userId === "") {
+      userId = "usr_" + Math.random().toString(36).substring(2, 9);
+    }
+
+    var alreadyCounted = cache.get(userId + "_total_tracked");
+    var currentTotal = props.getProperty("total_visitors");
+    var totalCount = currentTotal ? parseInt(currentTotal) : 0;
+
+    if (!alreadyCounted) {
+      totalCount++;
+      props.setProperty("total_visitors", totalCount.toString());
+      cache.put(userId + "_total_tracked", "yes", 7200);
+    }
+
+    cache.put(userId, "active", 30);
+
+    var userListStr = cache.get("active_user_list");
+    var userList = userListStr ? JSON.parse(userListStr) : [];
+
+    if (userList.indexOf(userId) === -1) {
+      userList.push(userId);
+    }
+
+    var cleanList = [];
+    userList.forEach(function(id) {
+      if (cache.get(id) === "active") {
+        cleanList.push(id);
+      }
+    });
+
+    cache.put("active_user_list", JSON.stringify(cleanList), 60);
+
+    return {
+      success: true,
+      userId: userId,
+      liveCount: cleanList.length,
+      totalCount: totalCount
+    };
+
+  } catch(e) {
+    return { success: false, liveCount: 1, totalCount: 0, error: e.toString() };
+  }
+}
+
+/**
+ * 🌟 OPTIMIZED MASTER FETCH ENGINE WITH PRO FALLBACKS (Columns E to K Covered)
+ * Performance is improved by batching range reads into a single spreadsheet call.
+ */
+function getLiveBannerNews() {
+  try {
+    var masterSs = SpreadsheetApp.getActiveSpreadsheet();
+    var masterSheet = masterSs.getSheetByName("Sheet1");
+    
+    // Single call mein range E2 se K2 tak ka saara data utha lein (Faster Speed)
+    var rowData = masterSheet.getRange("E2:K2").getValues()[0];
+    
+    var bHeading = (rowData[0] || "").toString().trim();
+    var bText    = (rowData[1] || "").toString().trim();
+    var bLink    = (rowData[2] || "").toString().trim();
+    var pStatus  = (rowData[3] || "").toString().trim();
+    var pHeading = (rowData[4] || "").toString().trim();
+    var pText    = (rowData[5] || "").toString().trim();
+    var pLink    = (rowData[6] || "").toString().trim();
+
+    return {
+      success: true,
+      // Banner Default Text (Agar sheet khali ho)
+      bannerHeading: bHeading || "اہم اپڈیٹ: ہمارا واٹس ایپ چینل جوائن کریں!",
+      bannerText: bText || "خیبر ایلیمنٹری اینڈ سیکنڈری ایجوکیشن کی تازہ خبریں اپڈیٹس کے لیے ہمارا واٹس ایپ چینل جوائن کریں۔",
+      bannerLink: bLink || "https://whatsapp.com/channel/0029VaCK4y0EquiKbkl09S1A",
+      
+      // Popup Default Settings with Babar Bhai's Preferred Branded Text (Agar sheet khali ho)[cite: 3]
+      popupStatus: pStatus || "Show", // default 'Show' rahega[cite: 3]
+      popupHeading: pHeading || "مبارک ہو! آپ کی پے سلپ مل گئی ہے",
+      popupText: pText || "اگر آپ چاہتے ہیں کہ اگلے مہینے کی سیلری اپڈیٹ نوٹیفیکیشنز سب سے پہلے آپ کے واٹس ایپ پر ملیں، تو ابھی جوائن کریں!",
+      popupLink: pLink || "https://whatsapp.com/channel/0029VaCK4y0EquiKbkl09S1A"
+    };
+  } catch(e) {
+    return { success: false, error: e.toString() };
+  }
+}

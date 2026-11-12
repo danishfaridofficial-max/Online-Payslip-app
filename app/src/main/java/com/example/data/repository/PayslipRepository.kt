@@ -102,10 +102,7 @@ class PayslipRepository(context: Context) {
                 .header("Cache-Control", "no-cache")
                 .build()
 
-            val client = OkHttpClient.Builder()
-                .connectTimeout(15, TimeUnit.SECONDS)
-                .readTimeout(15, TimeUnit.SECONDS)
-                .build()
+            val client = PayslipApiClient.sharedHttpClient
 
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@use emptyList<String>()
@@ -181,43 +178,70 @@ class PayslipRepository(context: Context) {
     fun getSavedPersonalNo(): String = prefs.getString("saved_personal_no", "") ?: ""
     fun isRememberEnabled(): Boolean = prefs.getBoolean("remember_credentials", true)
 
-    fun getAccountPassword(cnic: String): String {
-        val cleanCnic = cnic.replace(Regex("[^0-9]"), "")
-        // Default password is CNIC itself (matching KPESE HRMIS standard)
-        return prefs.getString("pwd_$cleanCnic", cleanCnic) ?: cleanCnic
+    private fun hashPassword(password: String): String {
+        return try {
+            val md = java.security.MessageDigest.getInstance("SHA-256")
+            val salted = "kp_hrmis_salt_2026_${password.trim()}"
+            val bytes = md.digest(salted.toByteArray(Charsets.UTF_8))
+            bytes.joinToString("") { "%02x".format(it) }
+        } catch (_: Exception) {
+            password.trim()
+        }
+    }
+
+    private fun isPasswordMatch(entered: String, storedHashOrPlain: String): Boolean {
+        if (storedHashOrPlain.isBlank()) return false
+        val hashedEntered = hashPassword(entered)
+        return (storedHashOrPlain == hashedEntered || storedHashOrPlain == entered.trim())
     }
 
     fun setAccountPassword(cnic: String, newPass: String) {
         val cleanCnic = cnic.replace(Regex("[^0-9]"), "")
-        prefs.edit().putString("pwd_$cleanCnic", newPass).apply()
+        val hashed = hashPassword(newPass)
+        prefs.edit().putString("pwd_$cleanCnic", hashed).apply()
     }
 
     suspend fun verifyPasswordOnline(cnic: String, password: String): Boolean = withContext(Dispatchers.IO) {
         val cleanCnic = cnic.replace(Regex("[^0-9]"), "").trim()
         val cleanPass = password.trim()
 
-        // 1. Check local cache first for fast response if already set
+        // 1. Check local cache first for fast response if authenticated previously on this device
         val localPass = prefs.getString("pwd_$cleanCnic", null)
-        if (localPass != null && localPass == cleanPass) {
+        if (localPass != null && isPasswordMatch(cleanPass, localPass)) {
+            // Migrate old plain-text to SHA-256 hash if necessary
+            if (localPass != hashPassword(cleanPass)) {
+                prefs.edit().putString("pwd_$cleanCnic", hashPassword(cleanPass)).apply()
+            }
             return@withContext true
         }
 
-        // 2. Query Google Sheet Users tab online
+        // 2. Query Google Sheet Users tab online via secure request
+        var networkAttempted = false
         try {
             val response = PayslipApiClient.verifyPassword(cleanCnic, cleanPass)
-            if (response.success && response.match == true) {
-                prefs.edit().putString("pwd_$cleanCnic", cleanPass).apply()
-                return@withContext true
-            } else if (response.success && response.match == false) {
-                return@withContext false
+            if (response.success) {
+                networkAttempted = true
+                if (response.match == true) {
+                    prefs.edit().putString("pwd_$cleanCnic", hashPassword(cleanPass)).apply()
+                    return@withContext true
+                } else if (response.match == false) {
+                    return@withContext false
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
         }
 
-        // 3. Fallback: if server is unreachable or user never set a custom password, default is CNIC
-        val fallbackPass = localPass ?: cleanCnic
-        return@withContext (cleanPass == fallbackPass)
+        // 3. Fallback:
+        // CRITICAL SECURITY FIX (Point 2):
+        // Never allow blind offline bypass with cleanPass == cleanCnic!
+        // Only allow login if this device already holds a verified hash matching cleanPass.
+        if (localPass != null && isPasswordMatch(cleanPass, localPass)) {
+            return@withContext true
+        }
+
+        // Offline or unverified user: reject login so internet interruption cannot bypass authentication
+        return@withContext false
     }
 
     suspend fun savePasswordOnline(cnic: String, newPass: String, email: String? = null): Boolean = withContext(Dispatchers.IO) {
@@ -225,8 +249,9 @@ class PayslipRepository(context: Context) {
         val cleanPass = newPass.trim()
         val cleanEmail = (email ?: getAccountEmail(cleanCnic) ?: "").trim()
 
-        // 1. Immediately cache locally
-        prefs.edit().putString("pwd_$cleanCnic", cleanPass).apply()
+        // 1. Immediately cache locally using SHA-256 hash (never plain text)
+        val hashed = hashPassword(cleanPass)
+        prefs.edit().putString("pwd_$cleanCnic", hashed).apply()
         if (cleanEmail.isNotBlank()) {
             prefs.edit().putString("email_$cleanCnic", cleanEmail).apply()
         }
@@ -251,15 +276,12 @@ class PayslipRepository(context: Context) {
 
         // 2. Persist to Google Sheet Users tab with Date & Time log
         try {
-            val currentPass = getAccountPassword(cleanCnic)
             val now = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.ENGLISH).format(java.util.Date())
             
-            // Try explicit saveRecoveryEmail endpoint
-            val res1 = PayslipApiClient.saveRecoveryEmail(cleanCnic, cleanEmail, now)
-            // Also update savePassword endpoint with email parameter so both handlers are satisfied
-            val res2 = PayslipApiClient.savePassword(cleanCnic, currentPass, cleanEmail, now)
+            // Explicit saveRecoveryEmail endpoint (never overwrites or touches password in Column B)
+            val res = PayslipApiClient.saveRecoveryEmail(cleanCnic, cleanEmail, now)
 
-            return@withContext (res1.success || res2.success)
+            return@withContext res.success
         } catch (e: Exception) {
             e.printStackTrace()
             return@withContext false
@@ -268,51 +290,17 @@ class PayslipRepository(context: Context) {
 
     suspend fun fetchRecoveryEmailFromMaster(cnic: String): String? = withContext(Dispatchers.IO) {
         val cleanCnic = cnic.replace(Regex("[^0-9]"), "").trim()
-        val masterSheetId = "164xqHxPq5Q6bS9-55pmp40Z-A03Vme3-GJbgKJ913tQ"
-        // Users tab gid is 1535137940
-        val url = "https://docs.google.com/spreadsheets/d/$masterSheetId/gviz/tq?tqx=out:csv&gid=1535137940"
-        try {
-            val request = Request.Builder()
-                .url(url)
-                .header("User-Agent", "Mozilla/5.0 (Linux; Android 13)")
-                .header("Cache-Control", "no-cache")
-                .build()
-
-            val client = OkHttpClient.Builder()
-                .connectTimeout(15, TimeUnit.SECONDS)
-                .readTimeout(15, TimeUnit.SECONDS)
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@use null
-                val body = response.body?.string() ?: return@use null
-                val rows = parseCsv(body)
-                for (row in rows) {
-                    if (row.isNotEmpty()) {
-                        val rowCnic = row[0].replace(Regex("[^0-9]"), "").trim()
-                        if (rowCnic == cleanCnic) {
-                            // Column D (index 3) is recovery email
-                            if (row.size > 3) {
-                                val email = row[3].trim()
-                                if (email.isNotBlank() && email.contains("@")) {
-                                    setAccountEmail(cleanCnic, email)
-                                    return@withContext email
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        null
+        // Point 4 Security Fix: Do NOT download the whole Users spreadsheet CSV publicly.
+        // Return locally stored email if available.
+        getAccountEmail(cleanCnic)
     }
 
     fun hasCustomPassword(cnic: String): Boolean {
         val cleanCnic = cnic.replace(Regex("[^0-9]"), "").trim()
         val localPass = prefs.getString("pwd_$cleanCnic", null)
-        return (!localPass.isNullOrBlank() && localPass != cleanCnic)
+        if (localPass.isNullOrBlank()) return false
+        val defaultHash = hashPassword(cleanCnic)
+        return (localPass != defaultHash && localPass != cleanCnic)
     }
 
     fun getAccountEmail(cnic: String): String? {

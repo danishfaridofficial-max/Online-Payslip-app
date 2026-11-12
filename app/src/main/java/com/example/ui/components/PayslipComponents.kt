@@ -86,6 +86,7 @@ fun PortalHeader(
     currentDate: String,
     hasUnreadNotifications: Boolean = false,
     unreadCount: Int = 0,
+    onMenuClick: (() -> Unit)? = null,
     onOpenWhatsappClick: (() -> Unit)? = null,
     onOpenSecurityNoticeClick: (() -> Unit)? = null,
     onOpenNotificationsClick: (() -> Unit)? = null,
@@ -111,7 +112,7 @@ fun PortalHeader(
             .padding(horizontal = 16.dp, vertical = 20.dp)
             .testTag("portal_header")
     ) {
-        // Top Action Bar: Left = Notification Bell, Right = Share App Button
+        // Top Action Bar: Left = Notification Bell & Share App, Right = Refresh & Menu (Hamburger)
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             Row(
                 modifier = Modifier
@@ -120,44 +121,65 @@ fun PortalHeader(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Left: In-App Notification Bell Button with Dynamic Badge Dot
-                IconButton(
-                    onClick = { onOpenNotificationsClick?.invoke() },
-                    modifier = Modifier
-                        .size(42.dp)
-                        .background(Color.White.copy(alpha = 0.18f), CircleShape)
-                        .testTag("portal_notification_bell_btn")
+                // Left: Bell and Share App
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Box(contentAlignment = Alignment.TopEnd) {
-                        Icon(
-                            imageVector = Icons.Default.NotificationsActive,
-                            contentDescription = "Notifications",
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        if (hasUnreadNotifications) {
-                            // Red badge indicator dot or count badge when unread
-                            Box(
-                                modifier = Modifier
-                                    .size(if (unreadCount > 1) 18.dp else 10.dp)
-                                    .background(Color(0xFFEF4444), CircleShape)
-                                    .border(1.5.dp, Color.White, CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (unreadCount > 1) {
-                                    Text(
-                                        text = if (unreadCount > 9) "9+" else "$unreadCount",
-                                        color = Color.White,
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
+                    IconButton(
+                        onClick = { onOpenNotificationsClick?.invoke() },
+                        modifier = Modifier
+                            .size(42.dp)
+                            .background(Color.White.copy(alpha = 0.18f), CircleShape)
+                            .testTag("portal_notification_bell_btn")
+                    ) {
+                        Box(contentAlignment = Alignment.TopEnd) {
+                            Icon(
+                                imageVector = Icons.Default.NotificationsActive,
+                                contentDescription = "Notifications",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            if (hasUnreadNotifications) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(if (unreadCount > 1) 18.dp else 10.dp)
+                                        .background(Color(0xFFEF4444), CircleShape)
+                                        .border(1.5.dp, Color.White, CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (unreadCount > 1) {
+                                        Text(
+                                            text = if (unreadCount > 9) "9+" else "$unreadCount",
+                                            color = Color.White,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
+
+                    if (onShareAppClick != null) {
+                        IconButton(
+                            onClick = { onShareAppClick.invoke() },
+                            modifier = Modifier
+                                .size(42.dp)
+                                .background(Color.White.copy(alpha = 0.18f), CircleShape)
+                                .testTag("portal_share_app_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = "Share App",
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
                 }
 
-                // Right: Refresh Button + Share App Button
+                // Right: Refresh Button + Hamburger Menu Button
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -179,20 +201,21 @@ fun PortalHeader(
                         }
                     }
 
-                    // Share App Button
-                    IconButton(
-                        onClick = { onShareAppClick?.invoke() },
-                        modifier = Modifier
-                            .size(42.dp)
-                            .background(Color.White.copy(alpha = 0.18f), CircleShape)
-                            .testTag("portal_share_app_btn")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Share,
-                            contentDescription = "Share App",
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
+                    if (onMenuClick != null) {
+                        IconButton(
+                            onClick = { onMenuClick.invoke() },
+                            modifier = Modifier
+                                .size(42.dp)
+                                .background(Color.White.copy(alpha = 0.18f), CircleShape)
+                                .testTag("portal_header_menu_btn")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Menu,
+                                contentDescription = "Open Navigation Menu",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -1213,9 +1236,19 @@ fun UnityBannerAd(
 
     var bannerView by remember { mutableStateOf<com.unity3d.services.banners.BannerView?>(null) }
     var isLoaded by remember { mutableStateOf(false) }
+    var retryTrigger by remember { mutableIntStateOf(0) }
 
-    DisposableEffect(isUnityInit, activity) {
-        if (isUnityInit && activity != null) {
+    val coroutineScope = rememberCoroutineScope()
+
+    // Ensure Unity Ads is initialized if not yet done
+    LaunchedEffect(Unit) {
+        if (!com.unity3d.ads.UnityAds.isInitialized && activity != null) {
+            com.example.util.UnityAdsManager.initialize(activity)
+        }
+    }
+
+    LaunchedEffect(isUnityInit, activity, retryTrigger) {
+        if (isUnityInit && activity != null && !isLoaded && !com.example.util.UnityAdsManager.isEmulator()) {
             com.example.util.UnityAdsManager.loadBanner(
                 activity = activity,
                 onLoaded = { view ->
@@ -1223,10 +1256,19 @@ fun UnityBannerAd(
                     isLoaded = true
                 },
                 onFailed = { err ->
-                    android.util.Log.w("UnityBannerAd", "Banner load failed: $err")
+                    android.util.Log.d("UnityBannerAd", "Banner load skipped/failed: $err")
+                    if (!com.example.util.UnityAdsManager.isEmulator()) {
+                        coroutineScope.launch {
+                            kotlinx.coroutines.delay(10000L)
+                            retryTrigger++
+                        }
+                    }
                 }
             )
         }
+    }
+
+    DisposableEffect(Unit) {
         onDispose {
             try {
                 bannerView?.destroy()
@@ -1706,6 +1748,47 @@ fun PayslipDetailDialog(
                                 )
                             )
                         }
+                    }
+                }
+            }
+        }
+
+        if (isGeneratingPdf) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {}
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth(0.92f)
+                        .widthIn(max = 420.dp)
+                        .padding(16.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        Text(
+                            text = "پی ڈی ایف تیار کی جا رہی ہے...",
+                            style = TextStyle(
+                                fontFamily = com.example.ui.theme.NotoNastaliqFamily,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = Color(0xFF0F766E)
+                            )
+                        )
+                        PayslipDocumentSkeleton()
                     }
                 }
             }
