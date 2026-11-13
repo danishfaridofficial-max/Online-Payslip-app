@@ -368,9 +368,9 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
 
                 if (result.success && result.data != null) {
                     val returnedCnic = result.data.cnic.replace(Regex("[^0-9]"), "").trim()
-                    if (state.isHrmisLoggedIn && returnedCnic.isNotEmpty() && returnedCnic != cleanQuery) {
+                    if (state.isHrmisLoggedIn && returnedCnic != cleanQuery) {
                         _uiState.update { it.copy(isLoading = false) }
-                        showToast("سیکیورٹی الرٹ: موصول شدہ پے سلپ آپ کے شناختی کارڈ سے میچ نہیں ہوئی۔", "error")
+                        showToast("آپ کا ریکارڈ شناختی کارڈ سے تصدیق نہیں ہو سکا، براہ کرم ایڈمن سے رابطہ کریں", "error")
                         return@launch
                     }
 
@@ -439,9 +439,9 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
 
                 if (result.success && result.data != null) {
                     val returnedCnic = result.data.cnic.replace(Regex("[^0-9]"), "").trim()
-                    if (returnedCnic.isNotEmpty() && returnedCnic != cleanQuery) {
+                    if (returnedCnic != cleanQuery) {
                         _uiState.update { it.copy(isLoading = false) }
-                        showToast("سیکیورٹی الرٹ: موصول شدہ پے سلپ آپ کے شناختی کارڈ سے میچ نہیں ہوئی۔", "error")
+                        showToast("آپ کا ریکارڈ شناختی کارڈ سے تصدیق نہیں ہو سکا، براہ کرم ایڈمن سے رابطہ کریں", "error")
                         return@launch
                     }
 
@@ -582,6 +582,7 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
                 var detectedCategory = initialCategory
                 var detectedDistrict = initialDistrict
                 var detectedMonth = fallbackMonth
+                var hasUnverifiedCnicRecord = false
 
                 // Month logic: Search recent active months (e.g. November first, then October)
                 val topMonths = scanMonths.take(2)
@@ -604,12 +605,14 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
 
                     if (primaryResult != null && primaryResult.success && primaryResult.data != null) {
                         val returnedCnic = primaryResult.data.cnic.replace(Regex("[^0-9]"), "").trim()
-                        if (returnedCnic.isEmpty() || returnedCnic == cleanCnic) {
+                        if (returnedCnic == cleanCnic) {
                             detectedCategory = initialCategory
                             detectedDistrict = dist
                             result = primaryResult
                             detectedMonth = primaryResult.month?.ifBlank { m } ?: m
                             break // Instant login! Do not call any other categories!
+                        } else {
+                            hasUnverifiedCnicRecord = true
                         }
                     }
 
@@ -632,8 +635,10 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
                                     )
                                     if (r.success && r.data != null) {
                                         val returnedCnic = r.data.cnic.replace(Regex("[^0-9]"), "").trim()
-                                        if (returnedCnic.isEmpty() || returnedCnic == cleanCnic) {
+                                        if (returnedCnic == cleanCnic) {
                                             foundDeferred.complete(Triple(cat, catDist, r))
+                                        } else {
+                                            hasUnverifiedCnicRecord = true
                                         }
                                     }
                                 } catch (_: Throwable) {
@@ -677,12 +682,14 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
                         }
                         if (monthResult != null && monthResult.success && monthResult.data != null) {
                             val returnedCnic = monthResult.data.cnic.replace(Regex("[^0-9]"), "").trim()
-                            if (returnedCnic.isEmpty() || returnedCnic == cleanCnic) {
+                            if (returnedCnic == cleanCnic) {
                                 result = monthResult
                                 detectedCategory = initialCategory
                                 detectedDistrict = dist
                                 detectedMonth = monthResult.month?.ifBlank { m } ?: m
                                 break
+                            } else {
+                                hasUnverifiedCnicRecord = true
                             }
                         }
                     }
@@ -710,11 +717,11 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
                 }
 
                 if (result != null && result.success && result.data != null) {
-                    // Strict CNIC verification: ensure the returned record matches logged in user
+                    // Strict CNIC verification: ensure the returned record is non-empty and matches logged in user
                     val returnedCnic = result.data.cnic.replace(Regex("[^0-9]"), "").trim()
-                    if (returnedCnic.isNotEmpty() && returnedCnic != cleanCnic) {
+                    if (returnedCnic != cleanCnic) {
                         _uiState.update { it.copy(isLoading = false) }
-                        showToast("شناختی کارڈ نمبر میچ نہیں ہوا۔", "error")
+                        showToast("آپ کا ریکارڈ شناختی کارڈ سے تصدیق نہیں ہو سکا، براہ کرم ایڈمن سے رابطہ کریں", "error")
                         return@launch
                     }
 
@@ -752,7 +759,11 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
                     }
                 } else {
                     _uiState.update { it.copy(isLoading = false) }
-                    showToast(result?.message ?: "اس شناختی کارڈ کا ڈیٹا بیس میں کوئی ریکارڈ نہیں ملا۔", "error")
+                    if (hasUnverifiedCnicRecord) {
+                        showToast("آپ کا ریکارڈ شناختی کارڈ سے تصدیق نہیں ہو سکا، براہ کرم ایڈمن سے رابطہ کریں", "error")
+                    } else {
+                        showToast(result?.message ?: "اس شناختی کارڈ کا ڈیٹا بیس میں کوئی ریکارڈ نہیں ملا۔", "error")
+                    }
                 }
             } catch (t: Throwable) {
                 _uiState.update { it.copy(isLoading = false) }
@@ -919,16 +930,21 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
 
         _uiState.update { it.copy(isLoading = true, loadingMessage = "نیا پاس ورڈ گوگل شیٹ میں محفوظ کیا جا رہا ہے...") }
         viewModelScope.launch {
-            repository.savePasswordOnline(cleanCnic, newPass)
-            _uiState.update {
-                it.copy(
-                    isLoading = false,
-                    showForgotPasswordModal = false,
-                    loginCnic = cleanCnic,
-                    loginPassword = newPass,
-                    toastMessage = "✓ نیا پاس ورڈ شیٹ اور سسٹم میں کامیابی سے محفوظ ہو گیا ہے! اب لاگ ان کریں۔",
-                    toastType = "success"
-                )
+            val isSaved = repository.savePasswordOnline(cleanCnic, newPass)
+            if (isSaved) {
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        showForgotPasswordModal = false,
+                        loginCnic = cleanCnic,
+                        loginPassword = newPass,
+                        toastMessage = "✓ نیا پاس ورڈ شیٹ اور سسٹم میں کامیابی سے محفوظ ہو گیا ہے! اب لاگ ان کریں۔",
+                        toastType = "success"
+                    )
+                }
+            } else {
+                _uiState.update { it.copy(isLoading = false) }
+                showToast("انٹرنیٹ یا سرور کی خرابی کی وجہ سے پاس ورڈ محفوظ نہیں ہو سکا", "error")
             }
         }
     }
@@ -983,15 +999,20 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
             }
 
             _uiState.update { it.copy(loadingMessage = "نیا پاس ورڈ گوگل شیٹ میں محفوظ کیا جا رہا ہے...") }
-            repository.savePasswordOnline(cnic, newPass)
-            _uiState.update {
-                it.copy(
-                    isLoading = false,
-                    showChangePasswordModal = false,
-                    loginPassword = newPass,
-                    toastMessage = "✓ نیا پاس ورڈ شیٹ اور سسٹم میں کامیابی سے محفوظ ہو گیا ہے۔",
-                    toastType = "success"
-                )
+            val isSaved = repository.savePasswordOnline(cnic, newPass)
+            if (isSaved) {
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        showChangePasswordModal = false,
+                        loginPassword = newPass,
+                        toastMessage = "✓ نیا پاس ورڈ شیٹ اور سسٹم میں کامیابی سے محفوظ ہو گیا ہے۔",
+                        toastType = "success"
+                    )
+                }
+            } else {
+                _uiState.update { it.copy(isLoading = false) }
+                showToast("انٹرنیٹ یا سرور کی خرابی کی وجہ سے پاس ورڈ محفوظ نہیں ہو سکا", "error")
             }
         }
     }

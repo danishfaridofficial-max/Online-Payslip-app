@@ -147,15 +147,13 @@ object PayslipApiClient {
     val sharedHttpClient: OkHttpClient get() = okHttpClient
 
     /**
-     * Executes sensitive credential operations via POST body to avoid leaking CNIC/passwords in URLs.
-     * Automatically falls back to GET if the deployed Google Apps Script does not have doPost(e) yet.
+     * Executes sensitive credential operations strictly via HTTP POST body (never GET URL).
      */
-    private fun executeSecurePostWithFallback(
+    private fun executeSecurePost(
         webAppUrl: String,
         formFields: Map<String, String>
-    ): String {
-        // 1. Primary Attempt: Send sensitive credentials in HTTP POST body (Zero URL leakage)
-        try {
+    ): String? {
+        return try {
             val formBuilder = okhttp3.FormBody.Builder()
             formFields.forEach { (key, value) ->
                 formBuilder.add(key, value)
@@ -173,24 +171,13 @@ object PayslipApiClient {
                         body.startsWith("<!DOCTYPE", ignoreCase = true) ||
                         body.startsWith("<html", ignoreCase = true)
                 if (response.isSuccessful && !isHtmlError && body.isNotBlank()) {
-                    return body
+                    body
+                } else {
+                    null
                 }
             }
-        } catch (_: Exception) {}
-
-        // 2. Safe Fallback to GET for backwards compatibility until Apps Script doPost is published
-        val queryParams = formFields.entries.joinToString("&") { (k, v) ->
-            "${URLEncoder.encode(k, "UTF-8")}=${URLEncoder.encode(v, "UTF-8")}"
-        }
-        val getUrl = if (webAppUrl.contains("?")) "$webAppUrl&$queryParams" else "$webAppUrl?$queryParams"
-        val getRequest = Request.Builder()
-            .url(getUrl)
-            .header("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:109.0) Gecko/111.0 Firefox/111.0")
-            .header("Accept", "application/json, text/plain, */*")
-            .build()
-
-        return okHttpClient.newCall(getRequest).execute().use { response ->
-            response.body?.string()?.trim() ?: ""
+        } catch (_: Exception) {
+            null
         }
     }
 
@@ -206,15 +193,25 @@ object PayslipApiClient {
                 "cnic" to cleanCnic,
                 "password" to password.trim()
             )
-            val body = executeSecurePostWithFallback(webAppUrl, fields)
-            if (body.isBlank() || body.startsWith("<!DOCTYPE", ignoreCase = true) || body.startsWith("<html", ignoreCase = true)) {
-                return@withContext PasswordResponse(success = false, message = "سرور سے جواب موصول نہیں ہوا۔ براہ کرم انٹرنیٹ چیک کریں۔")
+            val body = executeSecurePost(webAppUrl, fields)
+            if (body.isNullOrBlank()) {
+                return@withContext PasswordResponse(
+                    success = false,
+                    message = "انٹرنیٹ یا سرور کی خرابی کی وجہ سے تصدیق نہیں ہو سکی۔"
+                )
             }
             val adapter = moshi.adapter(PasswordResponse::class.java)
             val parsed = try { adapter.fromJson(body) } catch (_: Exception) { null }
-            parsed ?: PasswordResponse(success = false, message = "سرور سے تصدیق موصول نہیں ہوئی۔")
+            parsed ?: PasswordResponse(
+                success = false,
+                message = "سرور سے درست تصدیق موصول نہیں ہوئی، براہ کرم دوبارہ کوشش کریں۔"
+            )
         } catch (e: Exception) {
-            PasswordResponse(success = false, error = e.localizedMessage)
+            PasswordResponse(
+                success = false,
+                message = "انٹرنیٹ یا سرور کی خرابی کی وجہ سے تصدیق نہیں ہو سکی۔",
+                error = e.localizedMessage
+            )
         }
     }
 
@@ -234,15 +231,25 @@ object PayslipApiClient {
                 "email" to email.trim(),
                 "dateTime" to dateTime.trim()
             )
-            val body = executeSecurePostWithFallback(webAppUrl, fields)
-            if (body.isBlank() || body.startsWith("<!DOCTYPE", ignoreCase = true) || body.startsWith("<html", ignoreCase = true)) {
-                return@withContext PasswordResponse(success = false, message = "سرور پر محفوظ نہیں ہو سکا۔")
+            val body = executeSecurePost(webAppUrl, fields)
+            if (body.isNullOrBlank()) {
+                return@withContext PasswordResponse(
+                    success = false,
+                    message = "انٹرنیٹ یا سرور کی خرابی کی وجہ سے پاس ورڈ محفوظ نہیں ہو سکا"
+                )
             }
             val adapter = moshi.adapter(PasswordResponse::class.java)
             val parsed = try { adapter.fromJson(body) } catch (_: Exception) { null }
-            parsed ?: PasswordResponse(success = false, message = "سرور پر محفوظ نہیں ہو سکا۔")
+            parsed ?: PasswordResponse(
+                success = false,
+                message = "سرور پر پاس ورڈ محفوظ نہیں ہو سکا، براہ کرم دوبارہ کوشش کریں۔"
+            )
         } catch (e: Exception) {
-            PasswordResponse(success = false, error = e.localizedMessage)
+            PasswordResponse(
+                success = false,
+                message = "انٹرنیٹ یا سرور کی خرابی کی وجہ سے پاس ورڈ محفوظ نہیں ہو سکا",
+                error = e.localizedMessage
+            )
         }
     }
 
@@ -260,15 +267,25 @@ object PayslipApiClient {
                 "email" to email.trim(),
                 "dateTime" to dateTime.trim()
             )
-            val body = executeSecurePostWithFallback(webAppUrl, fields)
-            if (body.isBlank() || body.startsWith("<!DOCTYPE", ignoreCase = true) || body.startsWith("<html", ignoreCase = true)) {
-                return@withContext PasswordResponse(success = false, message = "سرور پر محفوظ نہیں ہو سکا۔")
+            val body = executeSecurePost(webAppUrl, fields)
+            if (body.isNullOrBlank()) {
+                return@withContext PasswordResponse(
+                    success = false,
+                    message = "انٹرنیٹ یا سرور کی خرابی کی وجہ سے ای میل محفوظ نہیں ہو سکی۔"
+                )
             }
             val adapter = moshi.adapter(PasswordResponse::class.java)
             val parsed = try { adapter.fromJson(body) } catch (_: Exception) { null }
-            parsed ?: PasswordResponse(success = false, message = "سرور پر محفوظ نہیں ہو سکا۔")
+            parsed ?: PasswordResponse(
+                success = false,
+                message = "سرور پر ای میل محفوظ نہیں ہو سکی، براہ کرم دوبارہ کوشش کریں۔"
+            )
         } catch (e: Exception) {
-            PasswordResponse(success = false, error = e.localizedMessage)
+            PasswordResponse(
+                success = false,
+                message = "انٹرنیٹ یا سرور کی خرابی کی وجہ سے ای میل محفوظ نہیں ہو سکی۔",
+                error = e.localizedMessage
+            )
         }
     }
 }

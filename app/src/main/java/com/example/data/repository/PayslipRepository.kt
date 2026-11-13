@@ -249,21 +249,24 @@ class PayslipRepository(context: Context) {
         val cleanPass = newPass.trim()
         val cleanEmail = (email ?: getAccountEmail(cleanCnic) ?: "").trim()
 
-        // 1. Immediately cache locally using SHA-256 hash (never plain text)
-        val hashed = hashPassword(cleanPass)
-        prefs.edit().putString("pwd_$cleanCnic", hashed).apply()
-        if (cleanEmail.isNotBlank()) {
-            prefs.edit().putString("email_$cleanCnic", cleanEmail).apply()
-        }
-
-        // 2. Persist to Google Sheet Users tab with Date & Time log
-        try {
+        // 1. Persist to Google Sheet Users tab first with Date & Time log
+        return@withContext try {
             val now = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.ENGLISH).format(java.util.Date())
             val res = PayslipApiClient.savePassword(cleanCnic, cleanPass, cleanEmail, now)
-            return@withContext res.success
+            if (res.success) {
+                // 2. Cache locally using SHA-256 hash ONLY after server confirms success
+                val hashed = hashPassword(cleanPass)
+                prefs.edit().putString("pwd_$cleanCnic", hashed).apply()
+                if (cleanEmail.isNotBlank()) {
+                    prefs.edit().putString("email_$cleanCnic", cleanEmail).apply()
+                }
+                true
+            } else {
+                false
+            }
         } catch (e: Exception) {
             e.printStackTrace()
-            return@withContext false
+            false
         }
     }
 
