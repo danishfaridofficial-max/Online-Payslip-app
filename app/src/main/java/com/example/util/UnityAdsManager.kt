@@ -66,27 +66,12 @@ object UnityAdsManager {
 
     val TEST_MODE: Boolean get() = com.example.BuildConfig.DEBUG
 
-    // Priority placement candidates: Exact Unity Dashboard Placement IDs first, fallbacks second
-    val REWARDED_CANDIDATES = listOf(
-        "BP_Rewarded_Android",
-        "Rewarded_Android",
-        "rewardedVideo",
-        "Rewarded"
-    )
+    // Exact active Unity Dashboard Placement IDs for Game ID 800388050
+    val REWARDED_CANDIDATES = listOf(DEFAULT_REWARDED_PLACEMENT)
 
-    val INTERSTITIAL_CANDIDATES = listOf(
-        "BP_Interstitial_Android",
-        "Interstitial_Android",
-        "video",
-        "Interstitial"
-    )
+    val INTERSTITIAL_CANDIDATES = listOf(DEFAULT_INTERSTITIAL_PLACEMENT)
 
-    val BANNER_CANDIDATES = listOf(
-        "BP_Banner_Android",
-        "Banner_Android",
-        "banner",
-        "Banner"
-    )
+    val BANNER_CANDIDATES = listOf(DEFAULT_BANNER_PLACEMENT)
 
     private val _isSdkInitialized = MutableStateFlow(false)
     val isSdkInitialized: StateFlow<Boolean> = _isSdkInitialized.asStateFlow()
@@ -173,30 +158,28 @@ object UnityAdsManager {
         val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
 
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            if (throwable is VirtualMachineError) {
+                previousHandler?.uncaughtException(thread, throwable)
+                return@setDefaultUncaughtExceptionHandler
+            }
             try {
                 val isMainThread = thread == Looper.getMainLooper().thread
                 val stackTraceString = Log.getStackTraceString(throwable)
                 val isAdOrSdkCrash = stackTraceString.contains("com.unity3d", ignoreCase = true) ||
-                        stackTraceString.contains("datastore", ignoreCase = true) ||
-                        stackTraceString.contains("protobuf", ignoreCase = true) ||
-                        stackTraceString.contains("androidx.work", ignoreCase = true) ||
-                        stackTraceString.contains("cronet", ignoreCase = true) ||
                         stackTraceString.contains("chromium", ignoreCase = true) ||
                         stackTraceString.contains("WebView", ignoreCase = true) ||
                         stackTraceString.contains("adservices", ignoreCase = true)
 
-                if (!isMainThread || isAdOrSdkCrash) {
+                if (!isMainThread && isAdOrSdkCrash) {
                     Log.w(TAG, "Shielded app from background SDK crash on thread ${thread.name}: ${throwable.message}")
                     try {
                         val crashlytics = com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance()
-                        crashlytics.log("Shielded background crash on thread: ${thread.name}")
+                        crashlytics.log("Shielded background SDK crash on thread: ${thread.name}")
                         crashlytics.recordException(throwable)
                     } catch (_: Throwable) {}
                     return@setDefaultUncaughtExceptionHandler
                 }
-            } catch (_: Throwable) {
-                return@setDefaultUncaughtExceptionHandler
-            }
+            } catch (_: Throwable) {}
 
             try {
                 com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().recordException(throwable)
@@ -218,25 +201,55 @@ object UnityAdsManager {
     }
 
     /**
-     * Checks if running on an Android emulator to avoid loading ads in tests.
+     * Checks if running on an Android emulator to avoid loading ads in emulator/test environments.
      */
     fun isEmulator(): Boolean {
         return try {
-            val buildFingerprint = android.os.Build.FINGERPRINT ?: ""
-            val buildModel = android.os.Build.MODEL ?: ""
-            val buildBrand = android.os.Build.BRAND ?: ""
-            val buildDevice = android.os.Build.DEVICE ?: ""
-            val buildProduct = android.os.Build.PRODUCT ?: ""
-            val buildHardware = android.os.Build.HARDWARE ?: ""
-            buildFingerprint.startsWith("generic") ||
-                    buildFingerprint.startsWith("unknown") ||
-                    buildModel.contains("google_sdk", ignoreCase = true) ||
-                    buildModel.contains("Emulator", ignoreCase = true) ||
-                    buildModel.contains("Android SDK built for x86", ignoreCase = true) ||
-                    buildHardware.contains("goldfish", ignoreCase = true) ||
-                    buildHardware.contains("ranchu", ignoreCase = true) ||
-                    buildBrand.startsWith("generic") && buildDevice.startsWith("generic") ||
-                    "google_sdk" == buildProduct
+            val fingerprint = (android.os.Build.FINGERPRINT ?: "").lowercase()
+            val model = (android.os.Build.MODEL ?: "").lowercase()
+            val brand = (android.os.Build.BRAND ?: "").lowercase()
+            val device = (android.os.Build.DEVICE ?: "").lowercase()
+            val product = (android.os.Build.PRODUCT ?: "").lowercase()
+            val hardware = (android.os.Build.HARDWARE ?: "").lowercase()
+            val manufacturer = (android.os.Build.MANUFACTURER ?: "").lowercase()
+            val board = (android.os.Build.BOARD ?: "").lowercase()
+
+            fingerprint.startsWith("generic") ||
+                fingerprint.startsWith("unknown") ||
+                fingerprint.contains("emulator") ||
+                fingerprint.contains("sdk_gphone") ||
+                fingerprint.contains("vsoc") ||
+                fingerprint.contains("aosp_cf") ||
+                fingerprint.contains("cuttlefish") ||
+                model.contains("google_sdk") ||
+                model.contains("emulator") ||
+                model.contains("android sdk built for") ||
+                model.contains("sdk_gphone") ||
+                model.contains("cuttlefish") ||
+                model.contains("droid4x") ||
+                hardware.contains("goldfish") ||
+                hardware.contains("ranchu") ||
+                hardware.contains("cutf") ||
+                hardware.contains("vsoc") ||
+                hardware.contains("vbox86") ||
+                hardware.contains("nox") ||
+                product.contains("sdk_gphone") ||
+                product.contains("aosp_cf") ||
+                product.contains("cf_x86") ||
+                product.contains("emulator") ||
+                product.contains("simulator") ||
+                product.contains("vbox86p") ||
+                product == "google_sdk" ||
+                product == "sdk" ||
+                product == "sdk_x86" ||
+                device.contains("vsoc") ||
+                device.contains("emu64") ||
+                device.contains("vbox86p") ||
+                (brand.startsWith("generic") && device.startsWith("generic")) ||
+                manufacturer.contains("genymotion") ||
+                board.contains("goldfish") ||
+                board.contains("ranchu") ||
+                board.contains("cutf")
         } catch (_: Throwable) {
             false
         }
@@ -250,9 +263,9 @@ object UnityAdsManager {
         installBackgroundCrashShield(context)
         val appContext = context.applicationContext ?: return
 
-        // Skip Unity Ads in emulator environment to prevent AdServices MEASUREMENT_SERVICE binding errors
-        if (isEmulator()) {
-            Log.i(TAG, "Emulator environment detected. Skipping Unity Ads initialization to preserve stability.")
+        // Skip Unity Ads in Robolectric JVM unit tests
+        if ((android.os.Build.FINGERPRINT ?: "").equals("robolectric", ignoreCase = true)) {
+            Log.i(TAG, "Robolectric test environment detected. Skipping Unity Ads SDK network calls.")
             return
         }
 
@@ -682,9 +695,8 @@ object UnityAdsManager {
 
         fun tryCandidate(index: Int) {
             if (index >= BANNER_CANDIDATES.size) {
-                isBannerSupported = false
-                Log.i(TAG, "Banner placements not configured on Unity Dashboard for Game ID $GAME_ID. Pausing banner requests.")
-                onFailed("All banner candidates exhausted")
+                Log.i(TAG, "Banner load failed for Game ID $GAME_ID.")
+                mainHandler.post { onFailed("Banner failed to load") }
                 return
             }
             val placement = BANNER_CANDIDATES[index]
@@ -693,11 +705,11 @@ object UnityAdsManager {
                 val banner = BannerView(activity, placement, UnityBannerSize(320, 50))
                 banner.listener = object : BannerView.Listener() {
                     override fun onBannerLoaded(bannerAdView: BannerView?) {
-                        Log.d(TAG, "✅ Unity Banner LOADED successfully for placement: $placement")
+                        Log.d(TAG, "Unity Banner LOADED successfully for placement: $placement")
                         isBannerSupported = true
                         activeBannerPlacement = placement
                         if (bannerAdView != null) {
-                            onLoaded(bannerAdView)
+                            mainHandler.post { onLoaded(bannerAdView) }
                         }
                     }
 
@@ -706,7 +718,10 @@ object UnityAdsManager {
                         errorInfo: BannerErrorInfo?
                     ) {
                         val errMsg = errorInfo?.errorMessage ?: "error"
-                        Log.i(TAG, "Banner placement $placement not available: $errMsg. Trying next candidate...")
+                        Log.i(TAG, "Banner placement $placement failed: $errMsg")
+                        if (errMsg.contains("placement not found", ignoreCase = true)) {
+                            isBannerSupported = false
+                        }
                         try {
                             bannerAdView?.destroy()
                         } catch (_: Throwable) {}

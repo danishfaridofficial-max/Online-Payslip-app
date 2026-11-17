@@ -5,23 +5,17 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -49,26 +43,9 @@ fun PayslipPortalApp(viewModel: PayslipViewModel) {
 
     val isLoggedIn = state.isHrmisLoggedIn && state.loggedInEmployee != null
 
-    // Navigation and Slide Menu State
-    var selectedTab by rememberSaveable { mutableStateOf("home") } // "home", "profile", "settings"
-    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-
-    // Reset tab to "home" and ensure drawer is closed automatically on login/logout
-    LaunchedEffect(isLoggedIn) {
-        if (drawerState.isOpen) {
-            drawerState.close()
-        }
-        if (!isLoggedIn) {
-            selectedTab = "home"
-        }
-    }
-
     // Modal dialog states
     var showExitDialog by remember { mutableStateOf(false) }
     var showInAppNotificationDialog by remember { mutableStateOf(false) }
-    var showAboutDialog by remember { mutableStateOf(false) }
-    var showPrivacyDialog by remember { mutableStateOf(false) }
-    var showHelpDialog by remember { mutableStateOf(false) }
 
     val notifications by com.example.data.NotificationStore.notifications.collectAsStateWithLifecycle()
     val hasUnreadNotifications by com.example.data.NotificationStore.hasUnread.collectAsStateWithLifecycle()
@@ -118,368 +95,260 @@ fun PayslipPortalApp(viewModel: PayslipViewModel) {
         }
     }
 
-    val onCheckUpdateAction: () -> Unit = {
-        scope.launch {
-            try {
-                viewModel.showToast("اپ ڈیٹس چیک کی جا رہی ہیں...", "info")
-                val cfg = com.example.util.AppUpdateManager.checkUpdateFromMasterSheet()
-                if (cfg.isUpdateRequired) {
-                    updateConfig = cfg
-                } else {
-                    viewModel.showToast("آپ کا ایپ لیٹسٹ ورژن (1.0) پر اپ ٹو ڈیٹ ہے!", "success")
-                }
-            } catch (_: Throwable) {
-                viewModel.showToast("اپ ڈیٹ سرور سے رابطہ نہیں ہو سکا۔", "warning")
-            }
-        }
-    }
-
-    // =========================================================================
-    // Back Button Behavior
-    // 1. If Drawer is open -> Back closes drawer
-    // 2. If on Profile or Settings tab -> Back returns to Home tab
-    // 3. If on Home tab and no child popups are open -> Back shows Exit Confirmation Dialog
-    // =========================================================================
-    BackHandler(enabled = drawerState.isOpen) {
-        scope.launch { drawerState.close() }
-    }
-
-    BackHandler(enabled = !drawerState.isOpen && selectedTab != "home") {
-        selectedTab = "home"
-    }
-
+    // Back button behavior: show exit confirmation when on main screen with no overlay open
     BackHandler(
-        enabled = !drawerState.isOpen &&
-                selectedTab == "home" &&
-                !state.showPayslipModal &&
+        enabled = !state.showPayslipModal &&
                 !state.showWhatsappPopup &&
+                !state.showForgotPasswordModal &&
+                !state.showChangePasswordModal &&
+                !state.showEditEmailModal &&
                 !updateConfig.isUpdateRequired &&
                 !showInAppNotificationDialog &&
-                !showAboutDialog &&
-                !showPrivacyDialog &&
-                !showHelpDialog
+                !showExitDialog
     ) {
         showExitDialog = true
     }
 
-    // ModalNavigationDrawer: In RTL, drawer slides out from the RIGHT edge of screen
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-        ModalNavigationDrawer(
-            drawerState = drawerState,
-            gesturesEnabled = false,
-            drawerContent = {
+        Scaffold(
+            containerColor = Color(0xFFF1F5F9),
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            snackbarHost = {
+                SnackbarHost(
+                    hostState = snackbarHostState,
+                    modifier = Modifier.navigationBarsPadding()
+                )
+            },
+            bottomBar = {
                 if (isLoggedIn) {
-                    PortalDrawerContent(
-                        employee = state.loggedInEmployee,
-                        onShareAppClick = onShareAppAction,
-                        onOpenWhatsappClick = onOpenWhatsappAction,
-                        onCheckUpdateClick = onCheckUpdateAction,
-                        onOpenHelpClick = { showHelpDialog = true },
-                        onOpenAboutClick = { showAboutDialog = true },
-                        onOpenPrivacyClick = { showPrivacyDialog = true },
-                        onLogoutClick = {
-                            selectedTab = "home"
-                            viewModel.onHrmisLogout()
-                        },
-                        onCloseDrawer = { scope.launch { drawerState.close() } }
+                    UnityBannerAd(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
                     )
                 }
             }
-        ) {
-            // Internal Scaffold layout runs in standard LTR for content coordinates
-            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                Scaffold(
-                    containerColor = Color(0xFFF1F5F9),
-                    contentWindowInsets = WindowInsets(0, 0, 0, 0),
-                    bottomBar = {
-                        if (isLoggedIn) {
+        ) { paddingValues ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = paddingValues.calculateBottomPadding())
+            ) {
+                // Status Bar solid emerald background
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .windowInsetsTopHeight(WindowInsets.statusBars)
+                        .background(Color(0xFF047857))
+                )
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                ) {
+                    @OptIn(ExperimentalMaterial3Api::class)
+                    androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+                        isRefreshing = state.isPullRefreshing,
+                        onRefresh = { viewModel.refreshPortal() },
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            // 1. Unified PortalHeader (Clean single-screen header without drawer button)
+                            PortalHeader(
+                                currentDate = state.currentDateFormatted,
+                                hasUnreadNotifications = hasUnreadNotifications,
+                                unreadCount = notifications.count { !it.isRead },
+                                onMenuClick = null,
+                                onOpenNotificationsClick = {
+                                    (context as? com.example.MainActivity)?.requestNotificationPermission()
+                                    com.example.data.NotificationStore.markAllAsRead(context)
+                                    showInAppNotificationDialog = true
+                                },
+                                onShareAppClick = onShareAppAction,
+                                onOpenWhatsappClick = onOpenWhatsappAction,
+                                onOpenSecurityNoticeClick = {
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar("یہ پورٹل ڈیٹا بیس کی تلاش کے لیے محفوظ ترین اصولوں کا استعمال کرتا ہے۔")
+                                    }
+                                },
+                                onRefreshClick = {
+                                    viewModel.refreshPortal()
+                                }
+                            )
+
+                            // 2. Main Content
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(Color.White)
+                                    .widthIn(max = 600.dp)
+                                    .align(Alignment.CenterHorizontally)
+                                    .padding(horizontal = 16.dp, vertical = 16.dp),
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
-                                com.example.ui.components.UnityBannerAd(
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                PortalBottomBar(
-                                    selectedTab = selectedTab,
-                                    onTabSelected = { selectedTab = it }
-                                )
-                            }
-                        }
-                    }
-                ) { paddingValues ->
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(bottom = paddingValues.calculateBottomPadding())
-                    ) {
-                        // Status Bar solid emerald background
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .windowInsetsTopHeight(WindowInsets.statusBars)
-                                .background(Color(0xFF047857))
-                        )
-
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f)
-                        ) {
-                            @OptIn(ExperimentalMaterial3Api::class)
-                            androidx.compose.material3.pulltorefresh.PullToRefreshBox(
-                                isRefreshing = state.isPullRefreshing,
-                                onRefresh = { viewModel.refreshPortal() },
-                                modifier = Modifier.fillMaxSize()
-                            ) {
-                                Column(
-                                    modifier = Modifier.fillMaxSize()
-                                ) {
-                                    // 1. Unified PortalHeader (With hamburger menu on login)
-                                    PortalHeader(
-                                        currentDate = state.currentDateFormatted,
+                                if (!isLoggedIn) {
+                                    HrmisLoginCard(
+                                        state = state,
+                                        onCnicChanged = viewModel::onLoginCnicChanged,
+                                        onPasswordChanged = viewModel::onLoginPasswordChanged,
+                                        onTogglePasswordVisibility = viewModel::onTogglePasswordVisibility,
+                                        onLoginClick = viewModel::onHrmisLogin,
+                                        onForgotPasswordClick = viewModel::onOpenForgotPasswordModal,
+                                        onCategorySelected = viewModel::onCategorySelected,
+                                        onDistrictSelected = viewModel::onDistrictSelected
+                                    )
+                                } else {
+                                    // Logged-in Single-Screen Dashboard (earlier session layout)
+                                    HrmisProfileDashboard(
+                                        employee = state.loggedInEmployee!!,
+                                        email = state.employeeEmail,
+                                        selectedMonth = state.selectedMonth,
+                                        availableMonths = state.availableMonths,
                                         hasUnreadNotifications = hasUnreadNotifications,
-                                        unreadCount = notifications.count { !it.isRead },
-                                        onMenuClick = if (isLoggedIn) {
-                                            { scope.launch { drawerState.open() } }
-                                        } else null,
+                                        showSecurityCard = true,
+                                        isSalaryLoading = state.isMonthSwitching,
                                         onOpenNotificationsClick = {
                                             (context as? com.example.MainActivity)?.requestNotificationPermission()
                                             com.example.data.NotificationStore.markAllAsRead(context)
                                             showInAppNotificationDialog = true
                                         },
                                         onShareAppClick = onShareAppAction,
-                                        onOpenWhatsappClick = onOpenWhatsappAction,
-                                        onOpenSecurityNoticeClick = {
-                                            scope.launch { snackbarHostState.showSnackbar("یہ پورٹل ڈیٹا بیس کی تلاش کے لیے محفوظ ترین اصولوں کا استعمال کرتا ہے۔") }
+                                        onMonthSelect = { month ->
+                                            viewModel.switchMonthSummaryOnly(month)
                                         },
-                                        onRefreshClick = {
-                                            viewModel.refreshPortal()
+                                        onRefreshClick = viewModel::refreshPortal,
+                                        onViewPayslipClick = {
+                                            viewModel.dismissWhatsappPopup()
+                                            viewModel.openPayslipModal()
+                                        },
+                                        onChangePasswordClick = viewModel::onOpenChangePasswordModal,
+                                        onEditEmailClick = viewModel::onOpenEditEmailModal,
+                                        onLogoutClick = {
+                                            viewModel.onHrmisLogout()
                                         }
                                     )
 
-                                    // 2. Main Content based on Login state & Selected Tab
-                                    if (!isLoggedIn) {
-                                        // GUEST / LOGIN VIEW (Neither Bottom Bar nor Drawer exists here)
-                                        Column(
-                                            modifier = Modifier
-                                                .fillMaxSize()
-                                                .verticalScroll(rememberScrollState())
-                                        ) {
-                                            Column(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(horizontal = 16.dp, vertical = 20.dp),
-                                                verticalArrangement = Arrangement.spacedBy(20.dp)
-                                            ) {
-                                                HrmisLoginCard(
-                                                    state = state,
-                                                    onCnicChanged = viewModel::onLoginCnicChanged,
-                                                    onPasswordChanged = viewModel::onLoginPasswordChanged,
-                                                    onTogglePasswordVisibility = viewModel::onTogglePasswordVisibility,
-                                                    onLoginClick = viewModel::onHrmisLogin,
-                                                    onForgotPasswordClick = viewModel::onOpenForgotPasswordModal,
-                                                    onCategorySelected = viewModel::onCategorySelected,
-                                                    onDistrictSelected = viewModel::onDistrictSelected
-                                                )
-                                            }
+                                    SearchFormCard(
+                                        state = state,
+                                        onDistrictSelected = viewModel::onDistrictSelected,
+                                        onCategorySelected = viewModel::onCategorySelected,
+                                        onMonthSelected = viewModel::onMonthSelected,
+                                        onYearSelected = viewModel::onYearSelected,
+                                        onSearchQueryChanged = viewModel::onSearchQueryChanged,
+                                        onPersonalNumberChanged = viewModel::onPersonalNumberChanged,
+                                        onToggleRememberCredentials = viewModel::onToggleRememberCredentials,
+                                        onResetClick = viewModel::onResetClick,
+                                        onSearchClick = viewModel::onSearchClick,
+                                        onDismissAlert = viewModel::clearToast
+                                    )
 
-                                            PortalFooter()
-                                        }
-                                    } else {
-                                        // LOGGED-IN VIEW with Tabs (Home, Profile, Settings)
-                                        when (selectedTab) {
-                                            "profile" -> {
-                                                ProfileTabScreen(
-                                                    employee = state.loggedInEmployee!!,
-                                                    email = state.employeeEmail,
-                                                    onEditEmailClick = viewModel::onOpenEditEmailModal,
-                                                    onChangePasswordClick = viewModel::onOpenChangePasswordModal,
-                                                    onLogoutClick = {
-                                                        selectedTab = "home"
-                                                        viewModel.onHrmisLogout()
-                                                    }
-                                                )
-                                            }
-                                            "settings" -> {
-                                                SettingsTabScreen(
-                                                    rememberMe = state.rememberCredentials,
-                                                    onToggleRememberMe = viewModel::onToggleRememberCredentials,
-                                                    onClearSavedCnic = viewModel::clearSavedCredentials,
-                                                    onCheckUpdateClick = onCheckUpdateAction,
-                                                    onShareAppClick = onShareAppAction,
-                                                    onOpenWhatsappClick = onOpenWhatsappAction,
-                                                    onOpenAboutClick = { showAboutDialog = true },
-                                                    onOpenPrivacyClick = { showPrivacyDialog = true },
-                                                    onOpenNotificationsClick = {
-                                                        (context as? com.example.MainActivity)?.requestNotificationPermission()
-                                                        com.example.data.NotificationStore.markAllAsRead(context)
-                                                        showInAppNotificationDialog = true
-                                                    },
-                                                    hasUnreadNotifications = hasUnreadNotifications,
-                                                    appVersion = "1.0"
-                                                )
-                                            }
-                                            else -> {
-                                                // "home" Tab: Dashboard
-                                                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                                                    Column(
-                                                        modifier = Modifier
-                                                            .fillMaxSize()
-                                                            .verticalScroll(rememberScrollState())
-                                                    ) {
-                                                        Column(
-                                                            modifier = Modifier
-                                                                .fillMaxWidth()
-                                                                .padding(horizontal = 16.dp, vertical = 14.dp),
-                                                            verticalArrangement = Arrangement.spacedBy(16.dp)
-                                                        ) {
-                                                            if (state.loggedInEmployee == null) {
-                                                                // Full Dashboard Skeleton while employee data is loading on login
-                                                                com.example.ui.components.FullDashboardSkeleton()
-                                                            } else {
-                                                                // Exact original HrmisProfileDashboard
-                                                                HrmisProfileDashboard(
-                                                                    employee = state.loggedInEmployee!!,
-                                                                    email = state.employeeEmail,
-                                                                    selectedMonth = state.selectedMonth,
-                                                                    availableMonths = state.availableMonths,
-                                                                    hasUnreadNotifications = hasUnreadNotifications,
-                                                                    showSecurityCard = false,
-                                                                    isSalaryLoading = state.isMonthSwitching,
-                                                                    onOpenNotificationsClick = {
-                                                                        (context as? com.example.MainActivity)?.requestNotificationPermission()
-                                                                        showInAppNotificationDialog = true
-                                                                    },
-                                                                    onShareAppClick = onShareAppAction,
-                                                                    onMonthSelect = { month ->
-                                                                        viewModel.switchMonthSummaryOnly(month)
-                                                                    },
-                                                                    onRefreshClick = viewModel::refreshPortal,
-                                                                    onViewPayslipClick = {
-                                                                        viewModel.dismissWhatsappPopup()
-                                                                        viewModel.openPayslipModal()
-                                                                    },
-                                                                    onChangePasswordClick = viewModel::onOpenChangePasswordModal,
-                                                                    onEditEmailClick = viewModel::onOpenEditEmailModal,
-                                                                    onLogoutClick = {
-                                                                        viewModel.onHrmisLogout()
-                                                                    }
-                                                                )
-                                                            }
-                                                        }
+                                    WhatsAppPromotionCard(
+                                        heading = state.bannerHeading,
+                                        text = state.bannerText,
+                                        link = state.bannerLink
+                                    )
 
-                                                        Spacer(modifier = Modifier.height(24.dp))
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
+                                    SecurityNoticeCard()
+
+                                    LiveTrafficWidget(
+                                        onlineCount = state.liveTrafficCount,
+                                        totalVisits = state.totalVisitsCount
+                                    )
                                 }
                             }
 
-                            // Loading Overlay (Only for guest search or background actions, never covering login form)
-                            if (state.isLoading && state.portalMode == "search") {
-                                LoadingOverlay(message = state.loadingMessage)
-                            }
+                            PortalFooter()
 
-                            // HRMIS Forgot Password Overlay (Dual Reset: Personnel No OR Email)
-                            if (state.showForgotPasswordModal) {
-                                HrmisForgotPasswordOverlay(
-                                    state = state,
-                                    onStepSelected = viewModel::onForgotStepSelected,
-                                    onCnicChanged = viewModel::onForgotCnicChanged,
-                                    onPersonalNoChanged = viewModel::onForgotPersonalNoChanged,
-                                    onEmailChanged = viewModel::onForgotEmailChanged,
-                                    onNewPasswordChanged = viewModel::onForgotNewPasswordChanged,
-                                    onSubmitVerification = viewModel::onSubmitForgotVerification,
-                                    onSubmitNewPassword = viewModel::onSubmitForgotNewPassword,
-                                    onDismiss = viewModel::onDismissForgotPasswordModal
-                                );
-                            }
-
-                            // HRMIS Change Password Overlay
-                            if (state.showChangePasswordModal) {
-                                HrmisChangePasswordOverlay(
-                                    currentPass = state.changeCurrentPassInput,
-                                    newPass = state.changeNewPassInput,
-                                    onCurrentPassChange = viewModel::onChangeCurrentPassChanged,
-                                    onNewPassChange = viewModel::onChangeNewPassChanged,
-                                    onSubmit = viewModel::onSubmitChangePassword,
-                                    onDismiss = viewModel::onDismissChangePasswordModal
-                                )
-                            }
-
-                            // HRMIS Edit Email Overlay
-                            if (state.showEditEmailModal) {
-                                HrmisEditEmailOverlay(
-                                    email = state.editEmailInput,
-                                    onEmailChange = viewModel::onEditEmailInputChanged,
-                                    onSubmit = viewModel::onSubmitEditEmail,
-                                    onDismiss = viewModel::onDismissEditEmailModal
-                                )
-                            }
-
-                            // Payslip Detail Overlay (Clean - Zero Ads on view)
-                            if (state.showPayslipModal && state.currentPayslip != null) {
-                                PayslipDetailDialog(
-                                    data = state.currentPayslip!!,
-                                    onDismiss = {
-                                        viewModel.dismissPayslipModal()
-                                    }
-                                )
-                            }
-
-                            // In-App Notification Modal Dialog
-                            if (showInAppNotificationDialog) {
-                                InAppNotificationDialog(
-                                    notifications = notifications,
-                                    onDismiss = { showInAppNotificationDialog = false },
-                                    onClearAll = {
-                                        com.example.data.NotificationStore.clearAll(context)
-                                    }
-                                )
-                            }
-
-                            // WhatsApp Viral Popup Dialog
-                            if (state.showWhatsappPopup) {
-                                WhatsAppCongratulationDialog(
-                                    heading = state.popupHeading,
-                                    text = state.popupText,
-                                    link = state.popupLink,
-                                    onDismiss = {
-                                        viewModel.dismissWhatsappPopup()
-                                    }
-                                )
-                            }
-
-                            // Remote Force Update Dialog
-                            if (updateConfig.isUpdateRequired) {
-                                com.example.util.ForceUpdateDialog(
-                                    versionText = updateConfig.remoteVersionText,
-                                    updateLink = updateConfig.updateLink
-                                )
-                            }
-
-                            // About Portal Dialog
-                            if (showAboutDialog) {
-                                AboutPortalDialog(onDismiss = { showAboutDialog = false })
-                            }
-
-                            // Privacy Policy Dialog
-                            if (showPrivacyDialog) {
-                                PrivacyPolicyDialog(onDismiss = { showPrivacyDialog = false })
-                            }
-
-                            // Help & Contact Dialog
-                            if (showHelpDialog) {
-                                HelpAndContactDialog(
-                                    onDismiss = { showHelpDialog = false },
-                                    onOpenWhatsappClick = onOpenWhatsappAction
-                                )
-                            }
+                            // Navigation bar bottom spacing
+                            Spacer(modifier = Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
                         }
+                    }
+
+                    // Loading Overlay
+                    if (state.isLoading) {
+                        LoadingOverlay(message = state.loadingMessage)
+                    }
+
+                    // HRMIS Forgot Password Overlay
+                    if (state.showForgotPasswordModal) {
+                        HrmisForgotPasswordOverlay(
+                            state = state,
+                            onStepSelected = viewModel::onForgotStepSelected,
+                            onCnicChanged = viewModel::onForgotCnicChanged,
+                            onPersonalNoChanged = viewModel::onForgotPersonalNoChanged,
+                            onEmailChanged = viewModel::onForgotEmailChanged,
+                            onNewPasswordChanged = viewModel::onForgotNewPasswordChanged,
+                            onSubmitVerification = viewModel::onSubmitForgotVerification,
+                            onSubmitNewPassword = viewModel::onSubmitForgotNewPassword,
+                            onDismiss = viewModel::onDismissForgotPasswordModal
+                        )
+                    }
+
+                    // HRMIS Change Password Overlay
+                    if (state.showChangePasswordModal) {
+                        HrmisChangePasswordOverlay(
+                            currentPass = state.changeCurrentPassInput,
+                            newPass = state.changeNewPassInput,
+                            onCurrentPassChange = viewModel::onChangeCurrentPassChanged,
+                            onNewPassChange = viewModel::onChangeNewPassChanged,
+                            onSubmit = viewModel::onSubmitChangePassword,
+                            onDismiss = viewModel::onDismissChangePasswordModal
+                        )
+                    }
+
+                    // HRMIS Edit Email Overlay
+                    if (state.showEditEmailModal) {
+                        HrmisEditEmailOverlay(
+                            email = state.editEmailInput,
+                            onEmailChange = viewModel::onEditEmailInputChanged,
+                            onSubmit = viewModel::onSubmitEditEmail,
+                            onDismiss = viewModel::onDismissEditEmailModal
+                        )
+                    }
+
+                    // Payslip Detail Overlay
+                    if (state.showPayslipModal && state.currentPayslip != null) {
+                        PayslipDetailDialog(
+                            data = state.currentPayslip!!,
+                            onDismiss = {
+                                viewModel.dismissPayslipModal()
+                            }
+                        )
+                    }
+
+                    // In-App Notification Modal Dialog (Clean for users)
+                    if (showInAppNotificationDialog) {
+                        InAppNotificationDialog(
+                            notifications = notifications,
+                            onDismiss = { showInAppNotificationDialog = false },
+                            onClearAll = {
+                                com.example.data.NotificationStore.clearAll(context)
+                            }
+                        )
+                    }
+
+                    // WhatsApp Viral Popup Dialog
+                    if (state.showWhatsappPopup) {
+                        WhatsAppCongratulationDialog(
+                            heading = state.popupHeading,
+                            text = state.popupText,
+                            link = state.popupLink,
+                            onDismiss = {
+                                viewModel.dismissWhatsappPopup()
+                            }
+                        )
+                    }
+
+                    // Remote Force Update Dialog
+                    if (updateConfig.isUpdateRequired) {
+                        com.example.util.ForceUpdateDialog(
+                            versionText = updateConfig.remoteVersionText,
+                            updateLink = updateConfig.updateLink
+                        )
                     }
                 }
             }
@@ -492,7 +361,12 @@ fun PayslipPortalApp(viewModel: PayslipViewModel) {
             onDismiss = { showExitDialog = false },
             onConfirmExit = {
                 showExitDialog = false
-                activity?.finishAffinity()
+                try {
+                    activity?.finishAffinity()
+                    activity?.finishAndRemoveTask()
+                } catch (_: Throwable) {
+                    activity?.finish()
+                }
             }
         )
     }
@@ -579,7 +453,7 @@ fun ExitConfirmationDialog(
                         onClick = onDismiss,
                         modifier = Modifier
                             .weight(1f)
-                            .height(46.dp)
+                            .height(48.dp)
                             .testTag("exit_dialog_cancel_button"),
                         shape = RoundedCornerShape(12.dp),
                         border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
@@ -601,7 +475,7 @@ fun ExitConfirmationDialog(
                         onClick = onConfirmExit,
                         modifier = Modifier
                             .weight(1f)
-                            .height(46.dp)
+                            .height(48.dp)
                             .testTag("exit_dialog_confirm_button"),
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(

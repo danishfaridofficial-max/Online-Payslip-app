@@ -1,7 +1,9 @@
 package com.example.util
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -12,6 +14,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.widget.Toast
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.example.data.model.PayslipData
 import java.io.File
@@ -345,8 +348,11 @@ object PdfUtil {
 
         // Save PDF to public Downloads folder so it persists on user device
         return try {
-            val fileName = "PaySlip-${data.personnelNo.ifEmpty { data.cnic }}-${data.monthYear.replace("/", "-")}.pdf"
-            
+            cleanupOldCachedPdfs(context.cacheDir)
+            val safeId = data.personnelNo.ifEmpty { data.cnic }.replace(Regex("[^A-Za-z0-9_-]"), "")
+            val safeMonth = data.monthYear.replace("/", "-").replace(Regex("[^A-Za-z0-9_-]"), "")
+            val fileName = "PaySlip-$safeId-$safeMonth.pdf"
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val resolver = context.contentResolver
                 val contentValues = android.content.ContentValues().apply {
@@ -361,15 +367,25 @@ object PdfUtil {
                     }
                 }
             } else {
-                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                if (!downloadsDir.exists()) downloadsDir.mkdirs()
-                val targetFile = File(downloadsDir, fileName)
-                FileOutputStream(targetFile).use { out ->
-                    doc.writeTo(out)
+                val hasStoragePerm = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE
+                ) == PackageManager.PERMISSION_GRANTED
+                val targetDir = if (hasStoragePerm) {
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                } else {
+                    context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+                }
+                if (targetDir != null) {
+                    if (!targetDir.exists()) targetDir.mkdirs()
+                    val targetFile = File(targetDir, fileName)
+                    FileOutputStream(targetFile).use { out ->
+                        doc.writeTo(out)
+                    }
                 }
             }
 
-            // Also keep in cache for viewing/sharing
+            // Also keep in cache for viewing/sharing via FileProvider
             val cacheFile = File(context.cacheDir, fileName)
             FileOutputStream(cacheFile).use { out ->
                 doc.writeTo(out)
@@ -381,6 +397,17 @@ object PdfUtil {
             doc.close()
             null
         }
+    }
+
+    private fun cleanupOldCachedPdfs(cacheDir: File) {
+        try {
+            val cutoff = System.currentTimeMillis() - (12 * 60 * 60 * 1000L)
+            cacheDir.listFiles()?.forEach { file ->
+                if (file.isFile && file.name.startsWith("PaySlip-") && file.name.endsWith(".pdf") && file.lastModified() < cutoff) {
+                    file.delete()
+                }
+            }
+        } catch (_: Throwable) {}
     }
 
     /**

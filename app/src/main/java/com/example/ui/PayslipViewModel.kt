@@ -319,19 +319,18 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
         val state = _uiState.value
         if (state.isLoading) return
 
-        val cleanQuery = if (state.isHrmisLoggedIn && state.loggedInEmployee != null) {
-            state.loggedInEmployee.cnic.replace(Regex("[^0-9]"), "").trim()
-        } else {
-            state.searchQuery.replace(Regex("[-\\s]"), "").trim()
+        // Strict security enforcement: unauthenticated users cannot search payslips,
+        // and logged-in users can NEVER query another CNIC
+        if (!state.isHrmisLoggedIn || state.loggedInEmployee == null) {
+            showToast("سیکیورٹی الرٹ: پے سلپ دیکھنے کے لیے پہلے لاگ ان کریں!", "error")
+            return
         }
 
-        // Strict security enforcement: logged in users can NEVER query another CNIC
-        if (state.isHrmisLoggedIn) {
-            val loggedInCnic = state.loggedInEmployee?.cnic?.replace(Regex("[^0-9]"), "") ?: repository.getLoggedInCnic()
-            if (loggedInCnic.isNullOrBlank() || cleanQuery != loggedInCnic) {
-                showToast("سیکیورٹی الرٹ: آپ صرف اپنا پے سلپ ریکارڈ تلاش کر سکتے ہیں!", "error")
-                return
-            }
+        val cleanQuery = state.loggedInEmployee.cnic.replace(Regex("[^0-9]"), "").trim()
+        val loggedInCnic = repository.getActiveSessionCnic() ?: repository.getLoggedInCnic()
+        if (loggedInCnic.isNullOrBlank() || cleanQuery != loggedInCnic || !repository.isSessionAuthorizedFor(cleanQuery)) {
+            showToast("سیکیورٹی الرٹ: آپ صرف اپنا پے سلپ ریکارڈ تلاش کر سکتے ہیں!", "error")
+            return
         }
 
         if (state.selectedDistrict.isBlank()) {
@@ -415,9 +414,16 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
 
     fun switchMonthSummaryOnly(month: String) {
         val state = _uiState.value
-        val cleanQuery = (state.loggedInEmployee?.cnic?.replace("-", "")?.trim() ?: "")
-            .ifBlank { state.loginCnic.replace("-", "").trim() }
-            .ifBlank { state.searchQuery.replace("-", "").trim() }
+        if (!state.isHrmisLoggedIn || state.loggedInEmployee == null) {
+            showToast("سیکیورٹی الرٹ: براہ کرم پہلے لاگ ان کریں!", "error")
+            return
+        }
+
+        val cleanQuery = state.loggedInEmployee.cnic.replace(Regex("[^0-9]"), "").trim()
+        if (!repository.isSessionAuthorizedFor(cleanQuery)) {
+            showToast("سیکیورٹی الرٹ: آپ کا سیشن غیر فعال ہے، براہ کرم دوبارہ لاگ ان کریں!", "error")
+            return
+        }
 
         _uiState.update {
             it.copy(
@@ -553,6 +559,8 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
 
         viewModelScope.launch {
             try {
+                // Reset any prior session before authenticating the new credentials
+                repository.clearSession()
                 // Verify password against Google Sheet 'Users' tab (with offline local fallback)
                 val isPassValid = repository.verifyPasswordOnline(cleanCnic, enteredPass)
                 if (!isPassValid) {
@@ -563,6 +571,9 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
 
                 _uiState.update {
                     it.copy(loadingMessage = "آن لائن پے سلپ پورٹل میں لاگ ان کیا جا رہا ہے...")
+                }
+                val emailDeferred = async(Dispatchers.IO) {
+                    try { repository.fetchRecoveryEmailFromMaster(cleanCnic) } catch (_: Throwable) { null }
                 }
                 val initialDistrict = if (state.selectedDistrict.isNotBlank()) state.selectedDistrict else "Bannu"
                 val initialCategory = if (state.selectedCategory.isNotBlank()) state.selectedCategory else "District"
@@ -695,9 +706,9 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
                     }
                 }
 
-                // If test CNIC (1110159744485) or sample fallback
+                // If test CNIC (1110159744485) sample fallback — debug builds only
                 if (result == null || !result.success || result.data == null) {
-                    if (cleanCnic == "1110159744485" || result?.message?.contains("Error: منتخب کردہ ضلع/مہینے") == true) {
+                    if (com.example.BuildConfig.DEBUG && cleanCnic == "1110159744485") {
                         val sample = PayslipEngine.getSamplePayslip(
                             district = initialDistrict,
                             category = initialCategory,
@@ -726,7 +737,7 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
                     }
 
                     repository.setLoggedInCnic(cleanCnic)
-                    val email = repository.getAccountEmail(cleanCnic)
+                    val email = emailDeferred.await()?.ifBlank { null } ?: repository.getAccountEmail(cleanCnic)
                     val activeMonth = result.month?.ifBlank { detectedMonth } ?: detectedMonth
                     val activeYear = result.year?.ifBlank { "2026" } ?: "2026"
 
@@ -749,14 +760,6 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
                             toastType = "success"
                         )
                     }
-
-                    // Background sync of recovery email from Google Sheet Users tab
-                    viewModelScope.launch {
-                        val onlineEmail = repository.fetchRecoveryEmailFromMaster(cleanCnic)
-                        if (!onlineEmail.isNullOrBlank()) {
-                            _uiState.update { it.copy(employeeEmail = onlineEmail) }
-                        }
-                    }
                 } else {
                     _uiState.update { it.copy(isLoading = false) }
                     if (hasUnverifiedCnicRecord) {
@@ -773,11 +776,13 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun onHrmisLogout() {
-        repository.setLoggedInCnic(null)
+        repository.clearSession()
         _uiState.update {
             it.copy(
                 isHrmisLoggedIn = false,
                 loggedInEmployee = null,
+                currentPayslip = null,
+                employeeEmail = null,
                 loginPassword = "",
                 toastMessage = "آپ کامیابی سے لاگ آؤٹ ہو گئے ہیں۔",
                 toastType = "info"
@@ -787,6 +792,7 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
 
     // Forgot password flow
     fun onOpenForgotPasswordModal() {
+        repository.clearPendingReset()
         _uiState.update {
             it.copy(
                 showForgotPasswordModal = true,
@@ -800,6 +806,7 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun onDismissForgotPasswordModal() {
+        repository.clearPendingReset()
         _uiState.update { it.copy(showForgotPasswordModal = false) }
     }
 
@@ -843,26 +850,28 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
 
             viewModelScope.launch {
                 try {
-                    var result = repository.searchPayslip(
+                    var isMatch = repository.verifyPersonnelNumberForReset(
                         district = state.selectedDistrict,
                         category = state.selectedCategory,
                         month = state.selectedMonth,
                         year = state.selectedYear,
-                        query = cleanCnic
+                        cnic = cleanCnic,
+                        personnelNo = cleanPn
                     )
 
-                    if (!result.success || result.data == null) {
+                    if (!isMatch) {
                         for (otherCat in listOf("Provincial", "District", "Federal").filter { it != state.selectedCategory }) {
                             val otherDist = if (otherCat.equals("Federal", ignoreCase = true)) "Federal" else state.selectedDistrict
-                            val r = repository.searchPayslip(
+                            val matched = repository.verifyPersonnelNumberForReset(
                                 district = otherDist,
                                 category = otherCat,
                                 month = state.selectedMonth,
                                 year = state.selectedYear,
-                                query = cleanCnic
+                                cnic = cleanCnic,
+                                personnelNo = cleanPn
                             )
-                            if (r.success && r.data != null) {
-                                result = r
+                            if (matched) {
+                                isMatch = true
                                 break
                             }
                         }
@@ -870,16 +879,10 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
 
                     _uiState.update { it.copy(isLoading = false) }
 
-                    if (result.success && result.data != null) {
-                        val serverPn = result.data.personnelNo.replace(Regex("[^0-9]"), "").trim()
-                        val isMatch = serverPn.isNotEmpty() && (serverPn == cleanPn || serverPn.trimStart('0') == cleanPn.trimStart('0'))
-                        if (isMatch) {
-                            _uiState.update { it.copy(forgotStep = "new_password") }
-                        } else {
-                            showToast("⚠️ شناختی کارڈ اور پرسنل نمبر میچ نہیں ہوئے!", "error")
-                        }
+                    if (isMatch) {
+                        _uiState.update { it.copy(forgotStep = "new_password") }
                     } else {
-                        showToast("شناختی کارڈ کا کوئی ریکارڈ نہیں ملا!", "error")
+                        showToast("⚠️ شناختی کارڈ اور پرسنل نمبر میچ نہیں ہوئے!", "error")
                     }
                 } catch (t: Throwable) {
                     _uiState.update { it.copy(isLoading = false) }
@@ -893,26 +896,14 @@ class PayslipViewModel(application: Application) : AndroidViewModel(application)
                 return
             }
 
-            val savedEmail = repository.getAccountEmail(cleanCnic)
-            if (!savedEmail.isNullOrBlank()) {
-                if (savedEmail.equals(email, ignoreCase = true)) {
-                    _uiState.update { it.copy(forgotStep = "new_password") }
-                } else {
-                    showToast("درج کردہ ای میل پروفائل کی ای میل سے میچ نہیں ہوئی!", "error")
-                }
-            } else {
-                // If local email was cleared or app reinstalled, verify directly from Google Sheet Users tab!
-                _uiState.update { it.copy(isLoading = true, loadingMessage = "گوگل شیٹ سے ای میل کی تصدیق کی جا رہی ہے...") }
-                viewModelScope.launch {
-                    val onlineEmail = repository.fetchRecoveryEmailFromMaster(cleanCnic)
-                    _uiState.update { it.copy(isLoading = false) }
-                    if (onlineEmail.isNullOrBlank()) {
-                        showToast("اس پروفائل میں کوئی ای میل درج نہیں ہے۔ براہ کرم 'پرسنل نمبر' کے ذریعے ری سیٹ کریں!", "warning")
-                    } else if (onlineEmail.equals(email, ignoreCase = true)) {
-                        _uiState.update { it.copy(forgotStep = "new_password") }
-                    } else {
-                        showToast("درج کردہ ای میل شیٹ میں موجود ای میل سے میچ نہیں ہوئی!", "error")
-                    }
+            _uiState.update { it.copy(isLoading = true, loadingMessage = "سرور سے ای میل کی تصدیق کی جا رہی ہے...") }
+            viewModelScope.launch {
+                val (matched, noEmail) = repository.verifyRecoveryEmailForReset(cleanCnic, email)
+                _uiState.update { it.copy(isLoading = false) }
+                when {
+                    matched -> _uiState.update { it.copy(forgotStep = "new_password") }
+                    noEmail -> showToast("اس پروفائل میں کوئی ای میل درج نہیں ہے۔ براہ کرم 'پرسنل نمبر' کے ذریعے ری سیٹ کریں!", "warning")
+                    else -> showToast("درج کردہ ای میل سسٹم میں موجود ای میل سے میچ نہیں ہوئی!", "error")
                 }
             }
         }

@@ -2,71 +2,57 @@ package com.example.data.repository
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.Build
+import com.example.BuildConfig
 import com.example.data.api.PayslipApiClient
 import com.example.data.engine.PayslipEngine
 import com.example.data.model.BannerResponse
-import com.example.data.model.DistrictsResponse
 import com.example.data.model.PayslipResponse
 import com.example.data.model.TrafficResponse
+import com.example.data.security.SecureStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import java.util.concurrent.TimeUnit
+import java.security.MessageDigest
+import java.security.SecureRandom
+import java.util.Base64
 import java.util.UUID
+import javax.crypto.SecretKeyFactory
+import javax.crypto.spec.PBEKeySpec
 
 class PayslipRepository(context: Context) {
 
     private val prefs: SharedPreferences = context.getSharedPreferences("payslip_portal_prefs", Context.MODE_PRIVATE)
 
-    private fun parseCsv(csvText: String): List<List<String>> {
-        val rows = mutableListOf<List<String>>()
-        val currentField = StringBuilder()
-        var inQuotes = false
-        val currentRow = mutableListOf<String>()
+    private fun isRobolectric(): Boolean {
+        return (Build.FINGERPRINT ?: "").equals("robolectric", ignoreCase = true)
+    }
 
-        var i = 0
-        while (i < csvText.length) {
-            val c = csvText[i]
-            when (c) {
-                '\"' -> {
-                    if (inQuotes && i + 1 < csvText.length && csvText[i + 1] == '\"') {
-                        currentField.append('\"')
-                        i++
-                    } else {
-                        inQuotes = !inQuotes
-                    }
-                }
-                ',' -> {
-                    if (inQuotes) {
-                        currentField.append(',')
-                    } else {
-                        currentRow.add(currentField.toString().trim())
-                        currentField.setLength(0)
-                    }
-                }
-                '\r' -> {}
-                '\n' -> {
-                    if (inQuotes) {
-                        currentField.append('\n')
-                    } else {
-                        currentRow.add(currentField.toString().trim())
-                        currentField.setLength(0)
-                        rows.add(currentRow.toList())
-                        currentRow.clear()
-                    }
-                }
-                else -> {
-                    currentField.append(c)
-                }
-            }
-            i++
-        }
-        if (currentField.isNotEmpty() || currentRow.isNotEmpty()) {
-            currentRow.add(currentField.toString().trim())
-            rows.add(currentRow.toList())
-        }
-        return rows
+    @Volatile
+    private var activeSessionCnic: String? = null
+    @Volatile
+    private var activeSessionToken: String? = null
+    @Volatile
+    private var pendingResetCnic: String? = null
+    @Volatile
+    private var pendingResetToken: String? = null
+
+    fun getActiveSessionCnic(): String? = activeSessionCnic
+
+    fun isSessionAuthorizedFor(cnic: String): Boolean {
+        val clean = cnic.replace(Regex("[^0-9]"), "").trim()
+        val session = activeSessionCnic
+        return !session.isNullOrBlank() && clean.length >= 13 && session == clean
+    }
+
+    fun clearSession() {
+        activeSessionCnic = null
+        activeSessionToken = null
+        setLoggedInCnic(null)
+    }
+
+    fun clearPendingReset() {
+        pendingResetCnic = null
+        pendingResetToken = null
     }
 
     @Volatile
@@ -93,33 +79,12 @@ class PayslipRepository(context: Context) {
             }
         }
 
-        val masterSheetId = "164xqHxPq5Q6bS9-55pmp40Z-A03Vme3-GJbgKJ913tQ"
-        val url = "https://docs.google.com/spreadsheets/d/$masterSheetId/gviz/tq?tqx=out:csv&gid=0"
+        // 3. Fetch active months securely via Apps Script so Master Sheet stays Private
         try {
-            val request = Request.Builder()
-                .url(url)
-                .header("User-Agent", "Mozilla/5.0 (Linux; Android 13)")
-                .header("Cache-Control", "no-cache")
-                .build()
-
-            val client = PayslipApiClient.sharedHttpClient
-
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@use emptyList<String>()
-                val body = response.body?.string() ?: return@use emptyList<String>()
-                val rows = parseCsv(body)
-                val months = mutableListOf<String>()
-                for (row in rows) {
-                    if (row.size >= 4) {
-                        val m = row[0].trim()
-                        val status = row[3].trim()
-                        if (status.equals("Active", ignoreCase = true) && m.isNotBlank() && !m.equals("Month", ignoreCase = true)) {
-                            months.add(m)
-                        }
-                    }
-                }
-                if (months.isNotEmpty()) {
-                    val resultList = months.reversed()
+            val res = PayslipApiClient.getActiveMonths()
+            if (res.success && res.months.isNotEmpty()) {
+                val resultList = res.months.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+                if (resultList.isNotEmpty()) {
                     cachedActiveMonths = resultList
                     cachedActiveMonthsTimestamp = now
                     prefs.edit()
@@ -164,8 +129,8 @@ class PayslipRepository(context: Context) {
         prefs.edit().apply {
             putBoolean("remember_credentials", remember)
             if (remember) {
-                putString("saved_cnic", cnic)
-                putString("saved_personal_no", personalNo)
+                putString("saved_cnic", SecureStorage.encrypt(cnic))
+                putString("saved_personal_no", SecureStorage.encrypt(personalNo))
             } else {
                 remove("saved_cnic")
                 remove("saved_personal_no")
@@ -174,25 +139,66 @@ class PayslipRepository(context: Context) {
         }
     }
 
-    fun getSavedCnic(): String = prefs.getString("saved_cnic", "") ?: ""
-    fun getSavedPersonalNo(): String = prefs.getString("saved_personal_no", "") ?: ""
+    private fun readEncryptedPref(key: String): String {
+        val raw = prefs.getString(key, null) ?: return ""
+        val decrypted = SecureStorage.decrypt(raw)
+        if (decrypted.isNotEmpty() && !SecureStorage.isEncrypted(raw)) {
+            prefs.edit().putString(key, SecureStorage.encrypt(decrypted)).apply()
+        }
+        return decrypted
+    }
+
+    fun getSavedCnic(): String = readEncryptedPref("saved_cnic")
+    fun getSavedPersonalNo(): String = readEncryptedPref("saved_personal_no")
     fun isRememberEnabled(): Boolean = prefs.getBoolean("remember_credentials", true)
 
+    private fun legacySha256Hash(password: String): String {
+        val md = MessageDigest.getInstance("SHA-256")
+        val salted = "kp_hrmis_salt_2026_${password.trim()}"
+        val bytes = md.digest(salted.toByteArray(Charsets.UTF_8))
+        return bytes.joinToString("") { "%02x".format(it) }
+    }
+
+    private fun pbkdf2Hash(password: String, saltBytes: ByteArray): ByteArray {
+        val spec = PBEKeySpec(password.trim().toCharArray(), saltBytes, 10_000, 256)
+        val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
+        return factory.generateSecret(spec).encoded
+    }
+
     private fun hashPassword(password: String): String {
+        val trimmed = password.trim()
+        require(trimmed.isNotEmpty()) { "Password must not be empty" }
         return try {
-            val md = java.security.MessageDigest.getInstance("SHA-256")
-            val salted = "kp_hrmis_salt_2026_${password.trim()}"
-            val bytes = md.digest(salted.toByteArray(Charsets.UTF_8))
-            bytes.joinToString("") { "%02x".format(it) }
+            val salt = ByteArray(16).also { SecureRandom().nextBytes(it) }
+            val derived = pbkdf2Hash(trimmed, salt)
+            val encoder = Base64.getEncoder()
+            "pbkdf2_v2:${encoder.encodeToString(salt)}:${encoder.encodeToString(derived)}"
         } catch (_: Exception) {
-            password.trim()
+            legacySha256Hash(trimmed)
         }
     }
 
-    private fun isPasswordMatch(entered: String, storedHashOrPlain: String): Boolean {
-        if (storedHashOrPlain.isBlank()) return false
-        val hashedEntered = hashPassword(entered)
-        return (storedHashOrPlain == hashedEntered || storedHashOrPlain == entered.trim())
+    private fun isPasswordMatch(entered: String, storedHash: String): Boolean {
+        if (storedHash.isBlank()) return false
+        val trimmed = entered.trim()
+        if (storedHash.startsWith("pbkdf2_v2:")) {
+            return try {
+                val parts = storedHash.split(":")
+                if (parts.size != 3) return false
+                val decoder = Base64.getDecoder()
+                val salt = decoder.decode(parts[1])
+                val expected = decoder.decode(parts[2])
+                val actual = pbkdf2Hash(trimmed, salt)
+                MessageDigest.isEqual(expected, actual)
+            } catch (_: Exception) {
+                false
+            }
+        }
+        // Legacy SHA-256 compatibility for pre-upgrade hashes only (no plain-text match)
+        return MessageDigest.isEqual(
+            storedHash.toByteArray(Charsets.UTF_8),
+            legacySha256Hash(trimmed).toByteArray(Charsets.UTF_8)
+        )
     }
 
     fun setAccountPassword(cnic: String, newPass: String) {
@@ -204,39 +210,42 @@ class PayslipRepository(context: Context) {
     suspend fun verifyPasswordOnline(cnic: String, password: String): Boolean = withContext(Dispatchers.IO) {
         val cleanCnic = cnic.replace(Regex("[^0-9]"), "").trim()
         val cleanPass = password.trim()
+        if (cleanCnic.length < 13 || cleanPass.isBlank()) return@withContext false
 
-        // 1. Check local cache first for fast response if authenticated previously on this device
         val localPass = prefs.getString("pwd_$cleanCnic", null)
+
+        // 1. Always verify against the server FIRST on real devices so password resets/revocations take effect immediately
+        if (!isRobolectric()) {
+            try {
+                val response = PayslipApiClient.verifyPassword(cleanCnic, cleanPass)
+                if (response.success) {
+                    if (response.match == true) {
+                        prefs.edit().putString("pwd_$cleanCnic", hashPassword(cleanPass)).apply()
+                        val serverEmail = (response.email ?: response.recoveryEmail)?.trim()
+                        if (!serverEmail.isNullOrBlank() && serverEmail.contains("@")) {
+                            setAccountEmail(cleanCnic, serverEmail)
+                        }
+                        activeSessionCnic = cleanCnic
+                        activeSessionToken = response.sessionToken
+                        return@withContext true
+                    } else if (response.match == false) {
+                        // Invalidate any stale cached hash when server explicitly rejects credentials
+                        prefs.edit().remove("pwd_$cleanCnic").apply()
+                        return@withContext false
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        // 2. Offline fallback ONLY when server is unreachable (or in Robolectric unit tests):
+        // Never allow blind bypass with cleanPass == cleanCnic; require an existing matching local hash.
         if (localPass != null && isPasswordMatch(cleanPass, localPass)) {
-            // Migrate old plain-text to SHA-256 hash if necessary
-            if (localPass != hashPassword(cleanPass)) {
+            if (!localPass.startsWith("pbkdf2_v2:")) {
                 prefs.edit().putString("pwd_$cleanCnic", hashPassword(cleanPass)).apply()
             }
-            return@withContext true
-        }
-
-        // 2. Query Google Sheet Users tab online via secure request
-        var networkAttempted = false
-        try {
-            val response = PayslipApiClient.verifyPassword(cleanCnic, cleanPass)
-            if (response.success) {
-                networkAttempted = true
-                if (response.match == true) {
-                    prefs.edit().putString("pwd_$cleanCnic", hashPassword(cleanPass)).apply()
-                    return@withContext true
-                } else if (response.match == false) {
-                    return@withContext false
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
-        // 3. Fallback:
-        // CRITICAL SECURITY FIX (Point 2):
-        // Never allow blind offline bypass with cleanPass == cleanCnic!
-        // Only allow login if this device already holds a verified hash matching cleanPass.
-        if (localPass != null && isPasswordMatch(cleanPass, localPass)) {
+            activeSessionCnic = cleanCnic
             return@withContext true
         }
 
@@ -249,16 +258,29 @@ class PayslipRepository(context: Context) {
         val cleanPass = newPass.trim()
         val cleanEmail = (email ?: getAccountEmail(cleanCnic) ?: "").trim()
 
+        val sessionTok = if (activeSessionCnic == cleanCnic) (activeSessionToken ?: "") else ""
+        val resetTok = if (pendingResetCnic == cleanCnic) (pendingResetToken ?: "") else ""
+
         // 1. Persist to Google Sheet Users tab first with Date & Time log
         return@withContext try {
             val now = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.ENGLISH).format(java.util.Date())
-            val res = PayslipApiClient.savePassword(cleanCnic, cleanPass, cleanEmail, now)
+            val res = PayslipApiClient.savePassword(
+                cnic = cleanCnic,
+                password = cleanPass,
+                email = cleanEmail,
+                dateTime = now,
+                sessionToken = sessionTok,
+                resetToken = resetTok
+            )
             if (res.success) {
-                // 2. Cache locally using SHA-256 hash ONLY after server confirms success
+                if (pendingResetCnic == cleanCnic) {
+                    clearPendingReset()
+                }
+                // 2. Cache locally using PBKDF2 hash ONLY after server confirms success
                 val hashed = hashPassword(cleanPass)
                 prefs.edit().putString("pwd_$cleanCnic", hashed).apply()
                 if (cleanEmail.isNotBlank()) {
-                    prefs.edit().putString("email_$cleanCnic", cleanEmail).apply()
+                    setAccountEmail(cleanCnic, cleanEmail)
                 }
                 true
             } else {
@@ -277,12 +299,14 @@ class PayslipRepository(context: Context) {
         // 1. Immediately cache locally
         setAccountEmail(cleanCnic, cleanEmail)
 
+        val sessionTok = if (activeSessionCnic == cleanCnic) (activeSessionToken ?: "") else ""
+
         // 2. Persist to Google Sheet Users tab with Date & Time log
         try {
             val now = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.ENGLISH).format(java.util.Date())
-            
+
             // Explicit saveRecoveryEmail endpoint (never overwrites or touches password in Column B)
-            val res = PayslipApiClient.saveRecoveryEmail(cleanCnic, cleanEmail, now)
+            val res = PayslipApiClient.saveRecoveryEmail(cleanCnic, cleanEmail, now, sessionToken = sessionTok)
 
             return@withContext res.success
         } catch (e: Exception) {
@@ -293,8 +317,20 @@ class PayslipRepository(context: Context) {
 
     suspend fun fetchRecoveryEmailFromMaster(cnic: String): String? = withContext(Dispatchers.IO) {
         val cleanCnic = cnic.replace(Regex("[^0-9]"), "").trim()
-        // Point 4 Security Fix: Do NOT download the whole Users spreadsheet CSV publicly.
-        // Return locally stored email if available.
+        if (cleanCnic.length < 13) return@withContext getAccountEmail(cleanCnic)
+
+        val sessionTok = if (activeSessionCnic == cleanCnic) (activeSessionToken ?: "") else ""
+
+        // Fetch strictly via authenticated Apps Script endpoint (Master Sheet is Private)
+        try {
+            val apiResult = PayslipApiClient.getRecoveryEmail(cleanCnic, sessionToken = sessionTok)
+            val apiEmail = (apiResult.email ?: apiResult.recoveryEmail)?.trim()
+            if (apiResult.success && !apiEmail.isNullOrBlank() && apiEmail.contains("@")) {
+                setAccountEmail(cleanCnic, apiEmail)
+                return@withContext apiEmail
+            }
+        } catch (_: Exception) {}
+
         getAccountEmail(cleanCnic)
     }
 
@@ -302,27 +338,27 @@ class PayslipRepository(context: Context) {
         val cleanCnic = cnic.replace(Regex("[^0-9]"), "").trim()
         val localPass = prefs.getString("pwd_$cleanCnic", null)
         if (localPass.isNullOrBlank()) return false
-        val defaultHash = hashPassword(cleanCnic)
-        return (localPass != defaultHash && localPass != cleanCnic)
+        return !isPasswordMatch(cleanCnic, localPass)
     }
 
     fun getAccountEmail(cnic: String): String? {
         val cleanCnic = cnic.replace(Regex("[^0-9]"), "")
-        return prefs.getString("email_$cleanCnic", null)
+        return readEncryptedPref("email_$cleanCnic").ifBlank { null }
     }
 
     fun setAccountEmail(cnic: String, email: String) {
         val cleanCnic = cnic.replace(Regex("[^0-9]"), "")
-        prefs.edit().putString("email_$cleanCnic", email.trim()).apply()
+        prefs.edit().putString("email_$cleanCnic", SecureStorage.encrypt(email.trim())).apply()
     }
 
-    fun getLoggedInCnic(): String? = prefs.getString("logged_in_cnic", null)
+    fun getLoggedInCnic(): String? = readEncryptedPref("logged_in_cnic").ifBlank { null }
 
     fun setLoggedInCnic(cnic: String?) {
         if (cnic == null) {
             prefs.edit().remove("logged_in_cnic").apply()
         } else {
-            prefs.edit().putString("logged_in_cnic", cnic.replace(Regex("[^0-9]"), "")).apply()
+            val clean = cnic.replace(Regex("[^0-9]"), "")
+            prefs.edit().putString("logged_in_cnic", SecureStorage.encrypt(clean)).apply()
         }
     }
 
@@ -362,6 +398,63 @@ class PayslipRepository(context: Context) {
         PayslipApiClient.getBanner()
     }
 
+    /**
+     * Verifies CNIC + Personnel Number server-side for password reset without returning or exposing
+     * any sensitive PayslipData (salary, bank account, DOB, GPF) to the device.
+     */
+    suspend fun verifyPersonnelNumberForReset(
+        district: String,
+        category: String,
+        month: String,
+        year: String,
+        cnic: String,
+        personnelNo: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        val cleanCnic = cnic.replace(Regex("[^0-9]"), "").trim()
+        val cleanPn = personnelNo.replace(Regex("[^0-9]"), "").trim()
+        if (cleanCnic.length < 13 || cleanPn.isBlank()) return@withContext false
+
+        val res = PayslipApiClient.verifyPersonnelNoForReset(
+            district = district,
+            category = category,
+            month = month,
+            year = year,
+            cnic = cleanCnic,
+            personnelNo = cleanPn
+        )
+
+        if (res.success && res.match == true && !res.resetToken.isNullOrBlank()) {
+            pendingResetCnic = cleanCnic
+            pendingResetToken = res.resetToken
+            return@withContext true
+        }
+        false
+    }
+
+    /**
+     * Verifies CNIC + Recovery Email server-side for password reset without downloading
+     * any stored email address from Google Sheets onto an unauthenticated device.
+     * Returns Pair(matched, noEmailRegistered).
+     */
+    suspend fun verifyRecoveryEmailForReset(
+        cnic: String,
+        email: String
+    ): Pair<Boolean, Boolean> = withContext(Dispatchers.IO) {
+        val cleanCnic = cnic.replace(Regex("[^0-9]"), "").trim()
+        val cleanEmail = email.trim()
+        if (cleanCnic.length < 13 || cleanEmail.isBlank()) return@withContext (false to false)
+
+        val res = PayslipApiClient.verifyRecoveryEmailForReset(cleanCnic, cleanEmail)
+        if (res.success && res.match == true && !res.resetToken.isNullOrBlank()) {
+            pendingResetCnic = cleanCnic
+            pendingResetToken = res.resetToken
+            setAccountEmail(cleanCnic, cleanEmail)
+            return@withContext (true to false)
+        }
+        val noEmail = res.error == "NO_EMAIL_REGISTERED"
+        false to noEmail
+    }
+
     suspend fun searchPayslip(
         district: String,
         category: String,
@@ -369,24 +462,40 @@ class PayslipRepository(context: Context) {
         year: String,
         query: String
     ): PayslipResponse = withContext(Dispatchers.IO) {
-        val cleanQuery = query.replace(Regex("[-\\s]"), "").trim()
+        val cleanQuery = query.replace(Regex("[^0-9]"), "").trim()
 
-        // 1. Call real server API
+        // High Security #1 Fix: Enforce authenticated session ownership before any payslip lookup
+        if (!isSessionAuthorizedFor(cleanQuery)) {
+            return@withContext PayslipResponse(
+                success = false,
+                message = "سیکیورٹی الرٹ: براہ کرم پہلے اپنے شناختی کارڈ اور پاس ورڈ سے لاگ ان کریں!"
+            )
+        }
+
+        // 1. Call real server API over authenticated POST
         val apiResult = PayslipApiClient.searchPaySlip(
             district = district,
             category = category,
             month = month,
             year = year,
-            query = cleanQuery
+            query = cleanQuery,
+            sessionToken = activeSessionToken ?: ""
         )
 
-        // 2. If server found the record for this person (Fahad Farid, Babar Ali, or any user), return it directly!
+        // 2. If server found the record, verify CNIC ownership before returning it!
         if (apiResult.success && apiResult.data != null) {
+            val returnedCnic = apiResult.data.cnic.replace(Regex("[^0-9]"), "").trim()
+            if (returnedCnic != cleanQuery) {
+                return@withContext PayslipResponse(
+                    success = false,
+                    message = "آپ کا ریکارڈ شناختی کارڈ سے تصدیق نہیں ہو سکا، براہ کرم ایڈمن سے رابطہ کریں"
+                )
+            }
             return@withContext apiResult
         }
 
-        // 3. Fallback for test CNIC (1110159744485) if server is offline or returned month-not-uploaded error:
-        if (cleanQuery == "1110159744485" && (
+        // 3. Fallback for test CNIC (1110159744485) ONLY in debug builds when server is offline or month not uploaded:
+        if (BuildConfig.DEBUG && cleanQuery == "1110159744485" && (
             apiResult.data == null ||
             apiResult.message?.contains("Unable to resolve host", ignoreCase = true) == true ||
             apiResult.message?.contains("timeout", ignoreCase = true) == true ||

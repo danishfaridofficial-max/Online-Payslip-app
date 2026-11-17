@@ -142,7 +142,28 @@ data class PasswordResponse(
     val success: Boolean = false,
     val match: Boolean? = null,
     val isDefault: Boolean? = null,
+    val locked: Boolean? = null,
+    val email: String? = null,
+    val recoveryEmail: String? = null,
+    val sessionToken: String? = null,
+    val resetToken: String? = null,
     val message: String? = null,
+    val error: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class ActiveMonthsResponse(
+    val success: Boolean = false,
+    val months: List<String> = emptyList(),
+    val error: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class AppUpdateResponse(
+    val success: Boolean = false,
+    val version: String? = null,
+    val status: String? = null,
+    val updateLink: String? = null,
     val error: String? = null
 )
 

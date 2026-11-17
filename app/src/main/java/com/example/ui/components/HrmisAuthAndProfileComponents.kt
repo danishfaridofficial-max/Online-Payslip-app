@@ -798,7 +798,7 @@ fun HrmisProfileDashboard(
     onEditEmailClick: () -> Unit,
     onLogoutClick: () -> Unit
 ) {
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1015,30 +1015,32 @@ fun HrmisProfileDashboard(
                 HorizontalDivider(color = Color(0xFFF1F5F9))
 
                 // Bottom: 1-Tap Copyable Identity Chips (Left: Personal No, Right: CNIC matching original design)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    CopyableDetailChip(
-                        title = "پرسنل نمبر (Personal No)",
-                        value = employee.personnelNo,
-                        isCopied = copiedLabel == "personal",
-                        onClick = {
-                            clipboardManager.setText(AnnotatedString(employee.personnelNo))
-                            copiedLabel = "personal"
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                    CopyableDetailChip(
-                        title = "شناختی کارڈ (CNIC)",
-                        value = employee.cnic,
-                        isCopied = copiedLabel == "cnic",
-                        onClick = {
-                            clipboardManager.setText(AnnotatedString(employee.cnic.replace("-", "")))
-                            copiedLabel = "cnic"
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        CopyableDetailChip(
+                            title = "پرسنل نمبر (Personal No)",
+                            value = employee.personnelNo,
+                            isCopied = copiedLabel == "personal",
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(employee.personnelNo))
+                                copiedLabel = "personal"
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                        CopyableDetailChip(
+                            title = "شناختی کارڈ (CNIC)",
+                            value = employee.cnic,
+                            isCopied = copiedLabel == "cnic",
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(employee.cnic.replace("-", "")))
+                                copiedLabel = "cnic"
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
             }
         }
@@ -1050,6 +1052,7 @@ fun HrmisProfileDashboard(
             val recent = list.take(4)
             recent.reversed()
         }
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Column(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -1145,6 +1148,7 @@ fun HrmisProfileDashboard(
                 }
             }
         }
+        }
 
         // 3. Monthly Salary Overview Card (with Visual Take-Home Breakdown Bar)
         if (isSalaryLoading) {
@@ -1161,60 +1165,62 @@ fun HrmisProfileDashboard(
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 // Header: Title on Left, Month Badges on Right (matching original design)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "ماہانہ سیلری سمری",
-                        style = TextStyle(
-                            fontFamily = NotoNastaliqFamily,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFCCFBF1)
-                        )
-                    )
-
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF14B8A6).copy(alpha = 0.25f),
-                            border = BorderStroke(1.dp, Color(0xFF2DD4BF))
-                        ) {
-                            Text(
-                                text = "موجودہ سلپ",
-                                style = TextStyle(
-                                    fontFamily = NotoNastaliqFamily,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF5EEAD4)
-                                ),
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        Text(
+                            text = "ماہانہ سیلری سمری",
+                            style = TextStyle(
+                                fontFamily = NotoNastaliqFamily,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFCCFBF1)
                             )
-                        }
+                        )
 
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF0D9488)
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = if (selectedMonth.isNotBlank() && !employee.monthYear.contains(selectedMonth, ignoreCase = true)) {
-                                    "$selectedMonth-2026"
-                                } else {
-                                    employee.monthYear.ifBlank { "Current Month" }
-                                },
-                                style = TextStyle(
-                                    fontFamily = FontFamily.SansSerif,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                ),
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFF14B8A6).copy(alpha = 0.25f),
+                                border = BorderStroke(1.dp, Color(0xFF2DD4BF))
+                            ) {
+                                Text(
+                                    text = "موجودہ سلپ",
+                                    style = TextStyle(
+                                        fontFamily = NotoNastaliqFamily,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF5EEAD4)
+                                    ),
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFF0D9488)
+                            ) {
+                                Text(
+                                    text = if (selectedMonth.isNotBlank() && !employee.monthYear.contains(selectedMonth, ignoreCase = true)) {
+                                        "$selectedMonth-2026"
+                                    } else {
+                                        employee.monthYear.ifBlank { "Current Month" }
+                                    },
+                                    style = TextStyle(
+                                        fontFamily = FontFamily.SansSerif,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    ),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -1254,78 +1260,88 @@ fun HrmisProfileDashboard(
                     )
                 }
 
-                // Gross Pay (Left) & Deductions (Right) matching original screenshot
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Gross Pay Chip (Left)
-                    Surface(
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFF14B8A6).copy(alpha = 0.15f),
-                        border = BorderStroke(0.8.dp, Color(0xFF2DD4BF).copy(alpha = 0.35f))
+                // Gross Pay (Left) & Deductions (Right) with Right-aligned text inside each chip
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        // Gross Pay Chip (Left)
+                        Surface(
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF14B8A6).copy(alpha = 0.15f),
+                            border = BorderStroke(0.8.dp, Color(0xFF2DD4BF).copy(alpha = 0.35f))
                         ) {
-                            Text(
-                                text = "مجموعی تنخواہ (Gross)",
-                                style = TextStyle(
-                                    fontFamily = NotoNastaliqFamily,
-                                    fontSize = 10.sp,
-                                    color = Color(0xFF99F6E4)
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = "Rs. ${employee.grossPay}",
-                                style = TextStyle(
-                                    fontFamily = FontFamily.SansSerif,
-                                    fontSize = 12.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Text(
+                                        text = "مجموعی تنخواہ (Gross)",
+                                        style = TextStyle(
+                                            fontFamily = NotoNastaliqFamily,
+                                            fontSize = 10.sp,
+                                            color = Color(0xFF99F6E4)
+                                        ),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "Rs. ${employee.grossPay}",
+                                        style = TextStyle(
+                                            fontFamily = FontFamily.SansSerif,
+                                            fontSize = 12.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White
+                                        ),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
                         }
-                    }
 
-                    // Total Deductions Chip (Right)
-                    Surface(
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFFEF4444).copy(alpha = 0.15f),
-                        border = BorderStroke(0.8.dp, Color(0xFFF87171).copy(alpha = 0.35f))
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        // Total Deductions Chip (Right)
+                        Surface(
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFFEF4444).copy(alpha = 0.15f),
+                            border = BorderStroke(0.8.dp, Color(0xFFF87171).copy(alpha = 0.35f))
                         ) {
-                            Text(
-                                text = "کل کٹوتیاں (Deductions)",
-                                style = TextStyle(
-                                    fontFamily = NotoNastaliqFamily,
-                                    fontSize = 10.sp,
-                                    color = Color(0xFFFCA5A5)
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = "Rs. ${employee.totalDeductions}",
-                                style = TextStyle(
-                                    fontFamily = FontFamily.SansSerif,
-                                    fontSize = 12.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFFECACA)
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Text(
+                                        text = "کل کٹوتیاں (Deductions)",
+                                        style = TextStyle(
+                                            fontFamily = NotoNastaliqFamily,
+                                            fontSize = 10.sp,
+                                            color = Color(0xFFFCA5A5)
+                                        ),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "Rs. ${employee.totalDeductions}",
+                                        style = TextStyle(
+                                            fontFamily = FontFamily.SansSerif,
+                                            fontSize = 12.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFFECACA)
+                                        ),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -1343,63 +1359,65 @@ fun HrmisProfileDashboard(
                 val netPct = if (grossNum > 0) ((netNum / grossNum) * 100).toInt().coerceIn(5, 95) else 78
                 val dedPct = (100 - netPct).coerceAtLeast(5)
 
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0xFF02201E))
-                        .padding(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "کٹوتیاں (Deductions): $dedPct%",
-                            style = TextStyle(
-                                fontFamily = NotoNastaliqFamily,
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFFFCA5A5)
-                            ),
-                            maxLines = 1
-                        )
-                        Text(
-                            text = "خالص وصولی (Take-home): $netPct%",
-                            style = TextStyle(
-                                fontFamily = NotoNastaliqFamily,
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF5EEAD4),
-                                textAlign = TextAlign.End
-                            ),
-                            modifier = Modifier.weight(1f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-
-                    Row(
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(8.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(Color(0xFF134E4A))
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFF02201E))
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Box(
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "کٹوتیاں (Deductions): $dedPct%",
+                                style = TextStyle(
+                                    fontFamily = NotoNastaliqFamily,
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFFCA5A5)
+                                ),
+                                maxLines = 1
+                            )
+                            Text(
+                                text = "خالص وصولی (Take-home): $netPct%",
+                                style = TextStyle(
+                                    fontFamily = NotoNastaliqFamily,
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF5EEAD4),
+                                    textAlign = TextAlign.End
+                                ),
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        Row(
                             modifier = Modifier
-                                .weight((dedPct / 100f).coerceIn(0.05f, 0.9f))
-                                .fillMaxHeight()
-                                .background(Color(0xFFF87171))
-                        )
-                        Box(
-                            modifier = Modifier
-                                .weight((netPct / 100f).coerceIn(0.1f, 0.95f))
-                                .fillMaxHeight()
-                                .background(Color(0xFF2DD4BF))
-                        )
+                                .fillMaxWidth()
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color(0xFF134E4A))
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .weight((dedPct / 100f).coerceIn(0.05f, 0.9f))
+                                    .fillMaxHeight()
+                                    .background(Color(0xFFF87171))
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .weight((netPct / 100f).coerceIn(0.1f, 0.95f))
+                                    .fillMaxHeight()
+                                    .background(Color(0xFF2DD4BF))
+                            )
+                        }
                     }
                 }
 
@@ -1450,50 +1468,52 @@ fun HrmisProfileDashboard(
                 colors = CardDefaults.cardColors(containerColor = Color.White),
                 border = BorderStroke(1.dp, Color(0xFFE2E8F0))
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFFF0FDFA),
-                        border = BorderStroke(1.dp, Color(0xFFCCFBF1))
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(
-                            text = "Acc: ${employee.gpfAccountNo.ifBlank { "CP V 26 P 175" }}",
-                            style = TextStyle(
-                                fontFamily = FontFamily.SansSerif,
-                                fontSize = 11.sp,
-                                color = Color(0xFF0F766E),
-                                fontWeight = FontWeight.Medium
-                            ),
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFFF0FDFA),
+                            border = BorderStroke(1.dp, Color(0xFFCCFBF1))
+                        ) {
+                            Text(
+                                text = "Acc: ${employee.gpfAccountNo.ifBlank { "CP V 26 P 175" }}",
+                                style = TextStyle(
+                                    fontFamily = FontFamily.SansSerif,
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF0F766E),
+                                    fontWeight = FontWeight.Medium
+                                ),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
 
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            text = "جی پی فنڈ بیلنس (GPF Balance)",
-                            style = TextStyle(
-                                fontFamily = NotoNastaliqFamily,
-                                fontSize = 12.sp,
-                                color = Color(0xFF64748B),
-                                textAlign = TextAlign.End
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = "جی پی فنڈ بیلنس (GPF Balance)",
+                                style = TextStyle(
+                                    fontFamily = NotoNastaliqFamily,
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF64748B),
+                                    textAlign = TextAlign.End
+                                )
                             )
-                        )
-                        Text(
-                            text = "Rs. ${employee.gpfBalance}",
-                            style = TextStyle(
-                                fontFamily = FontFamily.SansSerif,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF0D9488),
-                                textAlign = TextAlign.End
+                            Text(
+                                text = "Rs. ${employee.gpfBalance}",
+                                style = TextStyle(
+                                    fontFamily = FontFamily.SansSerif,
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF0D9488),
+                                    textAlign = TextAlign.End
+                                )
                             )
-                        )
+                        }
                     }
                 }
             }
@@ -1511,40 +1531,42 @@ fun HrmisProfileDashboard(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable { isServiceProfileExpanded = !isServiceProfileExpanded }
-                        .padding(vertical = 2.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = if (isServiceProfileExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = null,
-                        tint = Color(0xFF0F766E),
-                        modifier = Modifier.size(24.dp)
-                    )
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { isServiceProfileExpanded = !isServiceProfileExpanded }
+                            .padding(vertical = 2.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "ملازم کی سروس تفصیلات اور پے سکیل",
-                            style = TextStyle(
-                                fontFamily = NotoNastaliqFamily,
-                                fontSize = 13.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF134E4A)
-                            )
-                        )
                         Icon(
-                            imageVector = Icons.Default.Badge,
+                            imageVector = if (isServiceProfileExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                             contentDescription = null,
-                            tint = Color(0xFF0D9488),
-                            modifier = Modifier.size(18.dp)
+                            tint = Color(0xFF0F766E),
+                            modifier = Modifier.size(24.dp)
                         )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "ملازم کی سروس تفصیلات اور پے سکیل",
+                                style = TextStyle(
+                                    fontFamily = NotoNastaliqFamily,
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF134E4A)
+                                )
+                            )
+                            Icon(
+                                imageVector = Icons.Default.Badge,
+                                contentDescription = null,
+                                tint = Color(0xFF0D9488),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
 
@@ -1657,6 +1679,8 @@ fun HrmisProfileDashboard(
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 // Change Password Action
                 Surface(
                     modifier = Modifier
@@ -1846,6 +1870,8 @@ fun HrmisProfileDashboard(
                         }
                     }
                 }
+                }
+                }
             }
         }
     }
@@ -1868,38 +1894,40 @@ private fun CopyableDetailChip(
         color = if (isCopied) Color(0xFFF0FDF4) else Color(0xFFF8FAFC),
         border = BorderStroke(1.dp, if (isCopied) Color(0xFF86EFAC) else Color(0xFFE2E8F0))
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = TextStyle(
-                        fontFamily = NotoNastaliqFamily,
-                        fontSize = 10.sp,
-                        color = Color(0xFF64748B)
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+            Row(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        style = TextStyle(
+                            fontFamily = NotoNastaliqFamily,
+                            fontSize = 10.sp,
+                            color = Color(0xFF64748B)
+                        )
                     )
-                )
-                Text(
-                    text = value.ifBlank { "—" },
-                    style = TextStyle(
-                        fontFamily = FontFamily.SansSerif,
-                        fontSize = 12.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isCopied) Color(0xFF15803D) else Color(0xFF1E293B)
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    Text(
+                        text = value.ifBlank { "—" },
+                        style = TextStyle(
+                            fontFamily = FontFamily.SansSerif,
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isCopied) Color(0xFF15803D) else Color(0xFF1E293B)
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Icon(
+                    imageVector = if (isCopied) Icons.Default.Check else Icons.Default.ContentCopy,
+                    contentDescription = "Copy",
+                    tint = if (isCopied) Color(0xFF16A34A) else Color(0xFF94A3B8),
+                    modifier = Modifier.size(15.dp)
                 )
             }
-            Icon(
-                imageVector = if (isCopied) Icons.Default.Check else Icons.Default.ContentCopy,
-                contentDescription = "Copy",
-                tint = if (isCopied) Color(0xFF16A34A) else Color(0xFF94A3B8),
-                modifier = Modifier.size(15.dp)
-            )
         }
     }
 }

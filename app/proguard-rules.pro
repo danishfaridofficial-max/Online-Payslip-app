@@ -12,10 +12,23 @@
 #   public *;
 #}
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# Preserve line numbers and hide original filenames in Crashlytics stack traces
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Kotlin Metadata & Moshi JSON models
+-keep class kotlin.Metadata { *; }
+-keep class com.example.data.model.** { *; }
+-keep class * extends com.squareup.moshi.JsonAdapter { *; }
+-keep class com.squareup.moshi.** { *; }
+
+# Unity Ads SDK
+-keep class com.unity3d.** { *; }
+-dontwarn com.unity3d.**
+
+# OkHttp optional JVM/alternative TLS providers (not used on Android)
+-dontwarn org.bouncycastle.jsse.**
+-dontwarn org.conscrypt.**
+-dontwarn org.openjsse.**
+
+

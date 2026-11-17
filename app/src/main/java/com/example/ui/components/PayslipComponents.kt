@@ -1,13 +1,19 @@
 package com.example.ui.components
 
+import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.print.PrintAttributes
 import android.print.PrintManager
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
@@ -65,6 +71,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.R
 import com.example.ui.theme.NotoNastaliqFamily
 import com.example.data.model.PayItem
@@ -112,7 +119,7 @@ fun PortalHeader(
             .padding(horizontal = 16.dp, vertical = 20.dp)
             .testTag("portal_header")
     ) {
-        // Top Action Bar: Left = Notification Bell & Share App, Right = Refresh & Menu (Hamburger)
+        // Top Action Bar: Left = Notification Bell, Right = Refresh + Share + Optional Menu Button
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             Row(
                 modifier = Modifier
@@ -121,65 +128,50 @@ fun PortalHeader(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Left: Bell and Share App
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                // Left: In-App Notification Bell Button with Dynamic Badge
+                IconButton(
+                    onClick = { onOpenNotificationsClick?.invoke() },
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(Color.White.copy(alpha = 0.18f), CircleShape)
+                        .testTag("portal_notification_bell_btn")
                 ) {
-                    IconButton(
-                        onClick = { onOpenNotificationsClick?.invoke() },
-                        modifier = Modifier
-                            .size(42.dp)
-                            .background(Color.White.copy(alpha = 0.18f), CircleShape)
-                            .testTag("portal_notification_bell_btn")
-                    ) {
-                        Box(contentAlignment = Alignment.TopEnd) {
-                            Icon(
-                                imageVector = Icons.Default.NotificationsActive,
-                                contentDescription = "Notifications",
-                                tint = Color.White,
-                                modifier = Modifier.size(22.dp)
-                            )
-                            if (hasUnreadNotifications) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(if (unreadCount > 1) 18.dp else 10.dp)
-                                        .background(Color(0xFFEF4444), CircleShape)
-                                        .border(1.5.dp, Color.White, CircleShape),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (unreadCount > 1) {
-                                        Text(
-                                            text = if (unreadCount > 9) "9+" else "$unreadCount",
-                                            color = Color.White,
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
+                    Box(contentAlignment = Alignment.TopEnd) {
+                        Icon(
+                            imageVector = Icons.Default.NotificationsActive,
+                            contentDescription = "Notifications",
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        if (unreadCount > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .offset(x = 4.dp, y = (-4).dp)
+                                    .defaultMinSize(minWidth = 16.dp, minHeight = 16.dp)
+                                    .background(Color(0xFFEF4444), CircleShape)
+                                    .border(1.dp, Color.White, CircleShape)
+                                    .padding(horizontal = 3.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (unreadCount > 99) "99+" else unreadCount.toString(),
+                                    color = Color.White,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
-                        }
-                    }
-
-                    if (onShareAppClick != null) {
-                        IconButton(
-                            onClick = { onShareAppClick.invoke() },
-                            modifier = Modifier
-                                .size(42.dp)
-                                .background(Color.White.copy(alpha = 0.18f), CircleShape)
-                                .testTag("portal_share_app_btn")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Share,
-                                contentDescription = "Share App",
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp)
+                        } else if (hasUnreadNotifications) {
+                            Box(
+                                modifier = Modifier
+                                    .size(9.dp)
+                                    .background(Color(0xFFEF4444), CircleShape)
+                                    .border(1.dp, Color.White, CircleShape)
                             )
                         }
                     }
                 }
 
-                // Right: Refresh Button + Hamburger Menu Button
+                // Right: Refresh Button + Share App Button + Drawer Menu Button
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -188,7 +180,7 @@ fun PortalHeader(
                         IconButton(
                             onClick = { onRefreshClick.invoke() },
                             modifier = Modifier
-                                .size(42.dp)
+                                .size(48.dp)
                                 .background(Color.White.copy(alpha = 0.18f), CircleShape)
                                 .testTag("portal_header_refresh_btn")
                         ) {
@@ -201,17 +193,33 @@ fun PortalHeader(
                         }
                     }
 
+                    // Share App Button
+                    IconButton(
+                        onClick = { onShareAppClick?.invoke() },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(Color.White.copy(alpha = 0.18f), CircleShape)
+                            .testTag("portal_share_app_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = "Share App",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
                     if (onMenuClick != null) {
                         IconButton(
                             onClick = { onMenuClick.invoke() },
                             modifier = Modifier
-                                .size(42.dp)
+                                .size(48.dp)
                                 .background(Color.White.copy(alpha = 0.18f), CircleShape)
-                                .testTag("portal_header_menu_btn")
+                                .testTag("portal_menu_btn")
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Menu,
-                                contentDescription = "Open Navigation Menu",
+                                contentDescription = "Open Menu",
                                 tint = Color.White,
                                 modifier = Modifier.size(22.dp)
                             )
@@ -419,11 +427,6 @@ fun InAppNotificationDialog(
     onClearAll: () -> Unit
 ) {
     BackHandler(onBack = onDismiss)
-    val context = LocalContext.current
-
-    LaunchedEffect(Unit) {
-        com.example.data.NotificationStore.markAllAsRead(context)
-    }
 
     Box(
         modifier = Modifier
@@ -516,57 +519,6 @@ fun InAppNotificationDialog(
 
                 HorizontalDivider(color = Color(0xFFF1F5F9))
 
-                // Check system notification permission
-                val areNotificationsEnabled = androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled()
-                if (!areNotificationsEnabled) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFFFEF2F2),
-                        border = BorderStroke(1.dp, Color(0xFFEF4444)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFDC2626), modifier = Modifier.size(20.dp))
-                                Text(
-                                    text = "موبائل پر نوٹیفکیشن بند ہے!",
-                                    style = TextStyle(fontFamily = NotoNastaliqFamily, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF991B1B))
-                                )
-                            }
-                            Text(
-                                text = "آپ کے فون کی سیٹنگز میں اس ایپ کے نوٹیفکیشن بند ہیں۔ موصول کرنے کے لیے نیچے بٹن دبا کر سیٹنگز میں Allow کریں۔",
-                                style = TextStyle(fontFamily = NotoNastaliqFamily, fontSize = 11.sp, color = Color(0xFFB91C1C), lineHeight = 17.sp)
-                            )
-                            Button(
-                                onClick = {
-                                    try {
-                                        val intent = Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                                            putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
-                                        }
-                                        context.startActivity(intent)
-                                    } catch (_: Exception) {
-                                        val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                            data = Uri.fromParts("package", context.packageName, null)
-                                        }
-                                        context.startActivity(intent)
-                                    }
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(8.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626))
-                            ) {
-                                Text("فون سیٹنگز کھولیں اور آن کریں ⚙️", fontFamily = NotoNastaliqFamily, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
-
                 if (notifications.isEmpty()) {
                     // Clean Empty State
                     Column(
@@ -608,15 +560,6 @@ fun InAppNotificationDialog(
                                 lineHeight = 19.sp
                             )
                         )
-                    }
-
-                    Button(
-                        onClick = onDismiss,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F766E))
-                    ) {
-                        Text("ٹھیک ہے", fontFamily = NotoNastaliqFamily, fontWeight = FontWeight.Bold)
                     }
                 } else {
                     // Active Notifications List
@@ -672,32 +615,6 @@ fun InAppNotificationDialog(
                                                 lineHeight = 19.sp
                                             )
                                         )
-                                        val timeStr = remember(item.timestamp) {
-                                            try {
-                                                val sdf = java.text.SimpleDateFormat("hh:mm a • dd MMM yyyy", java.util.Locale.ENGLISH)
-                                                sdf.format(java.util.Date(item.timestamp))
-                                            } catch (_: Exception) { "" }
-                                        }
-                                        if (timeStr.isNotBlank()) {
-                                            Spacer(modifier = Modifier.height(4.dp))
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.AccessTime,
-                                                    contentDescription = null,
-                                                    tint = Color(0xFF0D9488),
-                                                    modifier = Modifier.size(11.dp)
-                                                )
-                                                Text(
-                                                    text = timeStr,
-                                                    fontSize = 10.sp,
-                                                    color = Color(0xFF0D9488),
-                                                    fontWeight = FontWeight.Medium
-                                                )
-                                            }
-                                        }
                                     }
                                 }
                             }
@@ -705,12 +622,12 @@ fun InAppNotificationDialog(
                     }
                 }
 
-                // Bottom Actions when notifications are present
-                if (notifications.isNotEmpty()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
+                // Bottom Actions
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (notifications.isNotEmpty()) {
                         OutlinedButton(
                             onClick = onClearAll,
                             modifier = Modifier.weight(1f),
@@ -720,15 +637,15 @@ fun InAppNotificationDialog(
                             Spacer(modifier = Modifier.width(4.dp))
                             Text("صاف کریں", fontFamily = NotoNastaliqFamily)
                         }
+                    }
 
-                        Button(
-                            onClick = onDismiss,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F766E))
-                        ) {
-                            Text("بند کریں", fontFamily = NotoNastaliqFamily, fontWeight = FontWeight.Bold)
-                        }
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F766E))
+                    ) {
+                        Text("بند کریں", fontFamily = NotoNastaliqFamily, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -1223,87 +1140,6 @@ fun DownloadRewardedAdModal(
 }
 
 /**
- * Unity Ads Banner View Composable for Dashboard impressions
- */
-@Composable
-fun UnityBannerAd(
-    modifier: Modifier = Modifier
-) {
-    val context = LocalContext.current
-    val isSdkInit by com.example.util.UnityAdsManager.isSdkInitialized.collectAsState()
-    val isUnityInit = isSdkInit || com.unity3d.ads.UnityAds.isInitialized
-    val activity = remember(context) { com.example.util.UnityAdsManager.findActivity(context) }
-
-    var bannerView by remember { mutableStateOf<com.unity3d.services.banners.BannerView?>(null) }
-    var isLoaded by remember { mutableStateOf(false) }
-    var retryTrigger by remember { mutableIntStateOf(0) }
-
-    val coroutineScope = rememberCoroutineScope()
-
-    // Ensure Unity Ads is initialized if not yet done
-    LaunchedEffect(Unit) {
-        if (!com.unity3d.ads.UnityAds.isInitialized && activity != null) {
-            com.example.util.UnityAdsManager.initialize(activity)
-        }
-    }
-
-    LaunchedEffect(isUnityInit, activity, retryTrigger) {
-        if (isUnityInit && activity != null && !isLoaded && !com.example.util.UnityAdsManager.isEmulator()) {
-            com.example.util.UnityAdsManager.loadBanner(
-                activity = activity,
-                onLoaded = { view ->
-                    bannerView = view
-                    isLoaded = true
-                },
-                onFailed = { err ->
-                    android.util.Log.d("UnityBannerAd", "Banner load skipped/failed: $err")
-                    if (!com.example.util.UnityAdsManager.isEmulator()) {
-                        coroutineScope.launch {
-                            kotlinx.coroutines.delay(10000L)
-                            retryTrigger++
-                        }
-                    }
-                }
-            )
-        }
-    }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            try {
-                bannerView?.destroy()
-                bannerView = null
-            } catch (_: Throwable) {}
-        }
-    }
-
-    if (isLoaded && bannerView != null) {
-        Box(
-            modifier = modifier
-                .fillMaxWidth()
-                .wrapContentHeight()
-                .padding(vertical = 4.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = Color.White,
-                shadowElevation = 2.dp,
-                border = BorderStroke(0.5.dp, Color(0xFFCBD5E1))
-            ) {
-                androidx.compose.ui.viewinterop.AndroidView(
-                    modifier = Modifier.size(width = 320.dp, height = 50.dp),
-                    factory = { _ ->
-                        (bannerView?.parent as? android.view.ViewGroup)?.removeView(bannerView)
-                        bannerView!!
-                    }
-                )
-            }
-        }
-    }
-}
-
-/**
  * Official Formatted Payslip Dialog matching District Accounts Office Bannu format
  */
 @Composable
@@ -1330,6 +1166,22 @@ fun PayslipDetailDialog(
             } else {
                 Toast.makeText(context, "پی ڈی ایف بنانے میں خرابی", Toast.LENGTH_SHORT).show()
             }
+        }
+    }
+
+    val legacyStoragePermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        triggerDownloadAction()
+    }
+
+    val startDownloadWithPermissionCheck: () -> Unit = {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+        ) {
+            legacyStoragePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        } else {
+            triggerDownloadAction()
         }
     }
 
@@ -1752,47 +1604,6 @@ fun PayslipDetailDialog(
                 }
             }
         }
-
-        if (isGeneratingPdf) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.55f))
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = {}
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth(0.92f)
-                        .widthIn(max = 420.dp)
-                        .padding(16.dp),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(20.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        Text(
-                            text = "پی ڈی ایف تیار کی جا رہی ہے...",
-                            style = TextStyle(
-                                fontFamily = com.example.ui.theme.NotoNastaliqFamily,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
-                                color = Color(0xFF0F766E)
-                            )
-                        )
-                        PayslipDocumentSkeleton()
-                    }
-                }
-            }
-        }
     }
     }
 }
@@ -1807,7 +1618,7 @@ fun PayslipDetailDialog(
                     activity = act,
                     onRewardGranted = {
                         if (pendingActionType == "download") {
-                            triggerDownloadAction()
+                            startDownloadWithPermissionCheck()
                         } else {
                             triggerShareAction()
                         }
@@ -2205,3 +2016,68 @@ fun WhatsAppCongratulationDialog(
     }
 }
 }
+
+/**
+ * Unity Banner Ad wrapper (320x50) that loads BP_Banner_Android once SDK initializes
+ * and collapses cleanly if no banner is loaded.
+ */
+@Composable
+fun UnityBannerAd(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val activity = remember(context) { com.example.util.UnityAdsManager.findActivity(context) }
+    val isSdkInitialized by com.example.util.UnityAdsManager.isSdkInitialized.collectAsStateWithLifecycle()
+    var bannerView by remember { mutableStateOf<com.unity3d.services.banners.BannerView?>(null) }
+
+    LaunchedEffect(activity) {
+        if (activity != null && !isSdkInitialized) {
+            com.example.util.UnityAdsManager.initialize(activity)
+        }
+    }
+
+    LaunchedEffect(isSdkInitialized, activity) {
+        if (
+            isSdkInitialized &&
+            activity != null &&
+            bannerView == null &&
+            com.example.util.UnityAdsManager.isBannerSupported
+        ) {
+            com.example.util.UnityAdsManager.loadBanner(
+                activity = activity,
+                onLoaded = { loadedView ->
+                    bannerView = loadedView
+                },
+                onFailed = {
+                    bannerView = null
+                }
+            )
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            try {
+                bannerView?.destroy()
+            } catch (_: Throwable) {}
+            bannerView = null
+        }
+    }
+
+    val currentBanner = bannerView
+    if (currentBanner != null) {
+        Box(
+            modifier = modifier
+                .fillMaxWidth()
+                .background(Color.White)
+                .padding(vertical = 4.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            androidx.compose.ui.viewinterop.AndroidView(
+                factory = { currentBanner },
+                modifier = Modifier
+                    .width(320.dp)
+                    .height(50.dp)
+            )
+        }
+    }
+}
+
