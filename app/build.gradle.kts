@@ -58,6 +58,9 @@ android {
       isDebuggable = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("release")
+      configure<com.google.firebase.crashlytics.buildtools.gradle.CrashlyticsExtension> {
+        mappingFileUploadEnabled = file("google-services.json").exists()
+      }
     }
     debug {
       if (file("${rootDir}/debug.keystore").exists()) {
