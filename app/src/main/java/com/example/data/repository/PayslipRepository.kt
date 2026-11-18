@@ -12,9 +12,9 @@ import com.example.data.model.TrafficResponse
 import com.example.data.security.SecureStorage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import android.util.Base64
 import java.security.MessageDigest
 import java.security.SecureRandom
-import java.util.Base64
 import java.util.UUID
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.PBEKeySpec
@@ -171,8 +171,7 @@ class PayslipRepository(context: Context) {
         return try {
             val salt = ByteArray(16).also { SecureRandom().nextBytes(it) }
             val derived = pbkdf2Hash(trimmed, salt)
-            val encoder = Base64.getEncoder()
-            "pbkdf2_v2:${encoder.encodeToString(salt)}:${encoder.encodeToString(derived)}"
+            "pbkdf2_v2:${Base64.encodeToString(salt, Base64.NO_WRAP)}:${Base64.encodeToString(derived, Base64.NO_WRAP)}"
         } catch (_: Exception) {
             legacySha256Hash(trimmed)
         }
@@ -185,9 +184,8 @@ class PayslipRepository(context: Context) {
             return try {
                 val parts = storedHash.split(":")
                 if (parts.size != 3) return false
-                val decoder = Base64.getDecoder()
-                val salt = decoder.decode(parts[1])
-                val expected = decoder.decode(parts[2])
+                val salt = Base64.decode(parts[1], Base64.NO_WRAP)
+                val expected = Base64.decode(parts[2], Base64.NO_WRAP)
                 val actual = pbkdf2Hash(trimmed, salt)
                 MessageDigest.isEqual(expected, actual)
             } catch (_: Exception) {
