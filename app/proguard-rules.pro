@@ -5,22 +5,20 @@
 # For more details, see
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
-
 # Preserve line numbers and hide original filenames in Crashlytics stack traces
 -keepattributes SourceFile,LineNumberTable
 -renamesourcefileattribute SourceFile
+
+# Keep all project application classes, activities, viewmodels, models, and states
+-keep class com.example.** { *; }
+-keepclassmembers class com.example.** { *; }
 
 # Kotlin Metadata & Moshi JSON models
 -keep class kotlin.Metadata { *; }
 -keep class com.example.data.model.** { *; }
 -keep class * extends com.squareup.moshi.JsonAdapter { *; }
 -keep class com.squareup.moshi.** { *; }
+-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
 
 # Unity Ads SDK
 -keep class com.unity3d.** { *; }
