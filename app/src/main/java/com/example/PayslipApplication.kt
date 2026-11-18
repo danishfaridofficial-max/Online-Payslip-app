@@ -15,8 +15,9 @@ class PayslipApplication : Application() {
     override fun onCreate() {
         super.onCreate()
 
-        // 1. Install crash shield and init notification store
+        // 1. Install crash shield, initialize Unity Ads, and init notification store
         UnityAdsManager.installBackgroundCrashShield(this)
+        UnityAdsManager.initialize(this, true)
         com.example.data.NotificationStore.init(this)
 
         // 2. Initialize FirebaseApp explicitly & subscribe to FCM topics immediately

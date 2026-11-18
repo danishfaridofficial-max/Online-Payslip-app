@@ -55,11 +55,14 @@ fun SplashScreen(
     val progress = remember { Animatable(0f) }
 
     // Smooth coordination: Allow at least 2000ms for brand animation,
-    // and wait for background data loading (isReady) up to max 3500ms timeout
+    // and wait for background data loading (isReady) and Ads SDK initialization up to max 3500ms timeout
     LaunchedEffect(isReady) {
         val startTime = System.currentTimeMillis()
         delay(2000L)
-        while (!isReady && System.currentTimeMillis() - startTime < 3500L) {
+        while (
+            (!isReady || !com.example.util.UnityAdsManager.isSdkInitialized.value) &&
+            System.currentTimeMillis() - startTime < 3500L
+        ) {
             delay(100L)
         }
         onTimeout()

@@ -64,7 +64,7 @@ object UnityAdsManager {
     @Volatile private var configuredGameId: String? = null
     val GAME_ID: String get() = configuredGameId ?: DEFAULT_GAME_ID
 
-    val TEST_MODE: Boolean get() = com.example.BuildConfig.DEBUG
+    val TEST_MODE: Boolean get() = true
 
     // Exact active Unity Dashboard Placement IDs for Game ID 800388050
     val REWARDED_CANDIDATES = listOf(DEFAULT_REWARDED_PLACEMENT)
@@ -269,11 +269,7 @@ object UnityAdsManager {
             return
         }
 
-        // Skip Unity Ads on low-RAM devices to protect stability and prevent OS kill
-        if (isLowRamDevice(appContext)) {
-            Log.i(TAG, "Low RAM device detected. Skipping Unity Ads initialization to preserve memory.")
-            return
-        }
+        // Unity Ads will initialize across devices while protected by crash shield
 
         if (GAME_ID.isBlank()) {
             Log.i(TAG, "Unity Ads Game ID is empty; skipping ad initialization.")
@@ -695,8 +691,12 @@ object UnityAdsManager {
 
         fun tryCandidate(index: Int) {
             if (index >= BANNER_CANDIDATES.size) {
-                Log.i(TAG, "Banner load failed for Game ID $GAME_ID.")
+                Log.i(TAG, "Banner load failed for Game ID $GAME_ID. Retrying in 15s.")
                 mainHandler.post { onFailed("Banner failed to load") }
+                mainHandler.postDelayed({
+                    bannerCandidateIndex = 0
+                    isBannerSupported = true
+                }, 15_000L)
                 return
             }
             val placement = BANNER_CANDIDATES[index]
