@@ -17,7 +17,7 @@ class PayslipApplication : Application() {
 
         // 1. Install crash shield, initialize Unity Ads, and init notification store
         UnityAdsManager.installBackgroundCrashShield(this)
-        UnityAdsManager.initialize(this, true)
+        UnityAdsManager.initialize(this)
         com.example.data.NotificationStore.init(this)
 
         // 2. Initialize FirebaseApp explicitly & subscribe to FCM topics immediately
