@@ -64,7 +64,7 @@ object UnityAdsManager {
     @Volatile private var configuredGameId: String? = null
     val GAME_ID: String get() = configuredGameId ?: DEFAULT_GAME_ID
 
-    val TEST_MODE: Boolean get() = true
+    val TEST_MODE: Boolean get() = false
 
     // Exact active Unity Dashboard Placement IDs for Game ID 800388050
     val REWARDED_CANDIDATES = listOf(DEFAULT_REWARDED_PLACEMENT)
